@@ -20,9 +20,12 @@ if __name__=='__main__':
     # aligned_events = ["StimOnset", "Choice", "RewFeedback"]
     aligned_events = ["StimOnset"]
 
-    bhv_path = '/Users/f005d7d/Documents/Attn_MdPRL/what-where-task/Behavior/'
-    processed_path = '/Users/f005d7d/Documents/Attn_MdPRL/what-where-task/processed/'
-    neural_path = '/Users/f005d7d/Documents/Attn_MdPRL/what-where-task/RasterVec_binSize_10ms'
+    # root_dir = '/Users/f005d7d/Documents/Attn_MdPRL/what-where-task/'
+    root_dir = '/dartfs-hpc/scratch/f005d7d/what_where_analysis/'
+
+    bhv_path = os.path.join(root_dir, 'Behavior')
+    processed_path = os.path.join(root_dir, 'processed')
+    neural_path = os.path.join(root_dir, 'RasterVec_binSize_10ms')
 
     binsize = 0.01
     gauss_window = 0.5/binsize
