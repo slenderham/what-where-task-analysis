@@ -8,7 +8,6 @@ import re
 from scipy.ndimage import gaussian_filter
 from tqdm import tqdm
 import scipy.io as sio
-from matplotlib import pyplot as plt
 from joblib import Parallel, delayed
 import os
 import pickle
