@@ -21,4 +21,4 @@
 #SBATCH --output=slurm_%j.txt
 
 
-python preprocessing.py
+python ./preprocessing.py
