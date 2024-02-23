@@ -12,9 +12,15 @@ from matplotlib import pyplot as plt
 from joblib import Parallel, delayed
 import os
 import pickle
+import argparse
+
 
 
 if __name__=='__main__':
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--njobs", default=8, help="number of cores to use")
+    args = parser.parse_args()
 
     monkey_names = ["W", "V"]
     # aligned_events = ["StimOnset", "Choice", "RewFeedback"]
@@ -120,7 +126,7 @@ if __name__=='__main__':
 
                         return [mdl.params, anova_mdl.sum_sq[:-1]/anova_mdl.sum_sq.sum()]
                     
-                    linreg_anova_results = Parallel(n_jobs=4)(delayed(run_linreg_anova)(time_idx) for time_idx in range(num_timesteps))
+                    linreg_anova_results = Parallel(n_jobs=args.njobs)(delayed(run_linreg_anova)(time_idx) for time_idx in range(num_timesteps))
                     
                     all_units_beta[:, unit_idx, :] = np.stack([curr_time_results[0] for curr_time_results in linreg_anova_results])
                     all_units_exp_var[:, unit_idx, :] = np.stack([curr_time_results[1] for curr_time_results in linreg_anova_results])
