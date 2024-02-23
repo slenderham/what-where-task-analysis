@@ -1,12 +1,23 @@
+%% path names, parameters, and regressors
+
 monkey_names = ["W", "V"];
 aligned_events = ["RewFeedback", "StimOnset"];
+
+% addpath '/dartfs-hpc/scratch/f005d7d/what_where_analysis/RasterVec_binSize_10ms'
+% addpath '/dartfs-hpc/scratch/f005d7d/what_where_analysis/Behavior/'
+
+% bhv_path = '/dartfs-hpc/scratch/f005d7d/what_where_analysis/Behavior/';
+% neural_path = '/dartfs-hpc/scratch/f005d7d/what_where_analysis/RasterVec_binSize_10ms';
+% processed_path = '/dartfs-hpc/scratch/f005d7d/what_where_analysis/Behavior/';
 
 addpath '/Users/f005d7d/Documents/Attn_MdPRL/what-where-task/RasterVec_binSize_10ms'
 addpath '/Users/f005d7d/Documents/Attn_MdPRL/what-where-task/Behavior/'
 
 bhv_path = '/Users/f005d7d/Documents/Attn_MdPRL/what-where-task/Behavior/';
 processed_path = '/Users/f005d7d/Documents/Attn_MdPRL/what-where-task/processed/';
-filelists = dir('/Users/f005d7d/Documents/Attn_MdPRL/what-where-task/RasterVec_binSize_10ms');
+neural_path = '/Users/f005d7d/Documents/Attn_MdPRL/what-where-task/RasterVec_binSize_10ms';
+
+filelists = dir(neural_path);
 
 filelists = {filelists.name};
 filelists = filelists(4:end);
@@ -17,17 +28,42 @@ gauss_SD = 0.05./binsize;
 gk = gausskernel(gauss_window,gauss_SD); 
 gk = gk./binsize;
 
-
 % 12 regressors, separate by blocks
-regressor_names = {'S_curr', 'C_what_curr', 'C_where_curr', 'R_curr', ...
+regressor_names = {'block', ...
+                   'S_curr', 'C_what_curr', 'C_where_curr', 'R_curr', ...
                    'C_what_prev', 'C_where_prev', 'R_prev', ...
-                   'C_where_prevXR_prev', 'C_what_prevXR_prev', ...
-                   'SXC_what_prev', 'SXR_prev', ...
-                   'SXC_what_prevXR_prev'};
+                   'RXC_where', 'RXC_what', ...
+                   'SXC_what', 'RXS', 'RXSXC_what'};
+
+regressor_expr = {'block', ...
+                  'block:C_what_curr:C_where_curr', 'block:C_what_curr',...
+                  'C_where_curr', 'R_curr', ...
+                  'block:C_what_prev', 'C_where_prev', 'R_prev', ...
+                  'R_prev:C_where_prev', 'block:R_prev:C_what_prev',...
+                  'C_what_curr:C_where_curr:C_what_prev',...
+                  'block:R_prev:C_what_curr:C_where_curr',...
+                  'R_prev:C_what_curr:C_where_curr:C_what_prev'};
+
+var_names_in_table = {'block', 'C_what_curr', 'C_where_curr', 'R_curr',...
+                      'C_what_prev', 'C_where_prev', 'R_prev'};
 
 
-%%
+formula = strcat('fr~', join(regressor_expr, '+'));
+formula = formula{1};
 
+% block categorical [N]
+% S, C_what_curr, C_what_prev interaction between +-1 and categorical [3N]
+% C_where_curr, R_curr all +-1 coded [1]
+% C_where_prev, R_prev all +-1 coded [1]
+% RXC_where, location choice wsls, +-1 coded [1]
+% RXC_what, color choice wsls, interaction between +-1 and categorical [N]
+% SXC_what, location of the previous color choice, +-1 coded [1]
+% RXS, configuration wsls???, is interaction between +-1 and categorical [N]
+% RXSXC_what, color location wsls, is coded +-1 [1]
+
+% 6N+5~80
+
+%% run the regression
 
 all_sess_regression_info = ...
     struct('monkey', {{}}, 'sess', {{}}, ...
@@ -56,7 +92,7 @@ for f=filelists
     bhv_file = load(bhv_filename);
     task_info = bhv_file.Y;
     % only keep chosen image, chosen loc, reward, and block type
-    task_info = task_info(:, [1 2 3 10]); 
+    task_info = task_info(:, [1 2 3 9 10]); 
 
     disp("===============================================")
     disp(strcat('loaded file ', f{1}));
@@ -69,45 +105,50 @@ for f=filelists
         disp('-------------------------------------------------')
         disp(strcat('block type ', block_type));
 
-        block_type_mask = task_info(:,4)==block_type;
-        
+        % only get one block type
+        block_type_mask = task_info(:,5)==block_type;
         block_trial_info = task_info(block_type_mask,:);
-        block_trial_info(:,1:3) = block_trial_info(:,1:3)*2-1;
-        
-        X = [block_trial_info(2:end,1).*block_trial_info(2:end,2)...
-             block_trial_info(2:end,1)...
-             block_trial_info(2:end,2)...
-             block_trial_info(2:end,3)...
-             block_trial_info(1:end-1,1)...
-             block_trial_info(1:end-1,2)...
-             block_trial_info(1:end-1,3)...
-             block_trial_info(1:end-1,2).*block_trial_info(1:end-1,3)...
-             block_trial_info(1:end-1,1).*block_trial_info(1:end-1,3)...
-             block_trial_info(2:end,1).*block_trial_info(2:end,2).*block_trial_info(1:end-1,1)...
-             block_trial_info(2:end,1).*block_trial_info(2:end,2).*block_trial_info(1:end-1,3)...
-             block_trial_info(2:end,1).*block_trial_info(2:end,2).*...
-             block_trial_info(1:end-1,1).*block_trial_info(1:end-1,3)];
 
-        X = [block_trial_info(1,1).*block_trial_info(1,2)...
-             block_trial_info(1,1)...
-             block_trial_info(1,2)...
-             block_trial_info(1,3)...
-             zeros(1,8); X];
+        % take variables: chosen img, chosen loc, reward, block num
+        block_trial_info = block_trial_info(:,1:4);
+
+        % transform the first three variables for contrast coding
+        block_trial_info(:,1:3) = block_trial_info(:,1:3)*2-1;
+        block_trial_info(:,4) = categorical(block_trial_info(:,4));
+
+        % make the time-lagged part of the design
+        block_trial_info_prev = [0,0,0; block_trial_info(1:end-1,1:3)];
+
+        % do not carry history info from block boundary since some of the
+        % trials are not actually contiguous
+        block_boundary_flag = block_trial_info(1:end-1,4)~=block_trial_info(2:end,4);
+        block_boundary_flag = [false; block_boundary_flag];
+        block_trial_info_prev(block_boundary_flag,:) = 0;
+        
+        % put together design matrix
+        % C_what_curr, C_where_curr, R_curr, block_id
+        % C_what_prev, C_where_prev, R_curr
+        X = [block_trial_info block_trial_info_prev];
 
         all_units_beta = ones(num_timesteps, num_units, length(regressor_names)+1)*nan;
         all_units_exp_var = ones(num_timesteps, num_units, length(regressor_names))*nan;
+
         for unit=1:num_units
             disp(strcat(num2str(unit), '/', num2str(num_units)))
             curr_unit_betas = [];
             curr_unit_exp_var = [];
+
             for timestep=1:num_timesteps
-                tbl_to_fit = array2table([squeeze(neural_data(timestep, unit, block_type_mask)), X], ...
-                    "VariableNames", ['fr', regressor_names]);
-                mdl = fitlm(tbl_to_fit, strcat('fr~', strjoin(regressor_names, '+')));
+                curr_unit_time_fr = squeeze(neural_data(timestep, unit, block_type_mask));
+                tbl_to_fit = array2table([curr_unit_time_fr, X], ...
+                    "VariableNames", ['fr', var_names_in_table]);
+                mdl = fitlm(tbl_to_fit, formula, ...
+                    'CategoricalVars', 5, 'DummyVarCoding', 'effects');
                 curr_unit_betas(timestep,:) = mdl.Coefficients.Estimate;
                 anova_mdl = anova(mdl);
                 curr_unit_exp_var(timestep,:) = anova_mdl.SumSq(1:end-1)/sum(anova_mdl.SumSq);
             end
+            
             all_units_beta(:,unit,:) = curr_unit_betas;
             all_units_exp_var(:,unit,:) = curr_unit_exp_var;
         end
