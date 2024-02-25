@@ -104,7 +104,7 @@ if __name__ == '__main__':
 
                 print("--------------------------------------------------------------------")
                 print("aligned to: " + aligned_event + ", monkey: " +
-                      monkey_name + ", session: " + sess_date + ", # trials=" + str(num_trials))
+                      monkey_name + ", session: " + sess_date + ", #trials=" + str(num_trials))
 
                 task_info[:, :3] = task_info[:, :3]*2-1
                 task_info[:, 3] = task_info[:, 3]*2-3
