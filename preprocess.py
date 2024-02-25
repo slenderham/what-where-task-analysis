@@ -102,11 +102,9 @@ if __name__ == '__main__':
 
                 num_trials, num_units, num_timesteps = neural_data.shape
 
-                print("------------------------------------------------------")
+                print("--------------------------------------------------------------------")
                 print("aligned to: " + aligned_event + ", monkey: " +
-                      monkey_name + ", session: " + sess_date)
-                print("number of trials: " + num_trials +
-                      ", number of units: " + num_units)
+                      monkey_name + ", session: " + sess_date + ", # trials=" + str(num_trials))
 
                 task_info[:, :3] = task_info[:, :3]*2-1
                 task_info[:, 3] = task_info[:, 3]*2-3
