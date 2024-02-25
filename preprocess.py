@@ -79,7 +79,7 @@ if __name__ == '__main__':
 
                 curr_sess_neural = h5py.File(filename)
                 sess_date = re.search(re.compile(
-                    f'RastVect-{monkey_name}(\d*)-binsize10ms-align2{aligned_event}.mat'), filename).groups()[0]
+                    f'RastVect-{monkey_name}(\\d*)-binsize10ms-align2{aligned_event}.mat'), filename).groups()[0]
 
                 neural_data = gaussian_filter(
                     curr_sess_neural['aligned2event'], gauss_SD, mode='constant', axes=2)
