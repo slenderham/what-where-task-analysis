@@ -141,7 +141,7 @@ if __name__ == '__main__':
                         ms_error = anova_mdl.sum_sq[-1]/anova_mdl.df[-1]
                         omega_sq = (anova_mdl.sum_sq[:-1]-anova_mdl.df[:-1]*ms_error)/(anova_mdl.sum_sq.sum()+ms_error)
 
-                        return [mdl.params, omega_sq, anova_mdl.loc[:-1,'PR(>F)']]
+                        return [mdl.params, omega_sq, anova_mdl.loc[:,'PR(>F)'][:-1]]
 
                     linreg_anova_results = Parallel(n_jobs=args.njobs)(
                         delayed(run_linreg_anova)(time_idx) for time_idx in range(num_timesteps))
