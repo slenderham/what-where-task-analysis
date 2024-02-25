@@ -137,5 +137,5 @@ if __name__=='__main__':
                 all_sess_regression_info['betas'].append(all_units_beta)
                 all_sess_regression_info['exp_vars'].append(all_units_exp_var)
 
-                with open(os.path.join(processed_path, 'all_sess_regression_info.pkl')) as f:
+                with open(os.path.join(processed_path, 'all_sess_regression_info.pkl'), 'w') as f:
                     pickle.dump(all_sess_regression_info, f)

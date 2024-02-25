@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Name of the job
-#SBATCH --job-name=my_first_slurm_job
+#SBATCH --job-name=preprocessing
 
 # Number of compute nodes
 #SBATCH --nodes=1
