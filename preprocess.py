@@ -111,8 +111,8 @@ if __name__=='__main__':
                 num_betas = 158
                 num_exp_vars = 27
 
-                all_units_beta = np.ones((num_timesteps, num_units, num_betas))*np.nan;
-                all_units_exp_var = np.ones((num_timesteps, num_units, num_exp_vars))*np.nan;
+                all_units_beta = np.ones((num_timesteps, num_units, num_betas))*np.nan
+                all_units_exp_var = np.ones((num_timesteps, num_units, num_exp_vars))*np.nan
 
                 for unit_idx in tqdm(range(num_units)):
                     def run_linreg_anova(time_idx):
@@ -137,5 +137,5 @@ if __name__=='__main__':
                 all_sess_regression_info['betas'].append(all_units_beta)
                 all_sess_regression_info['exp_vars'].append(all_units_exp_var)
 
-                with open(os.path.join(processed_path, 'all_sess_regression_info.pkl'), 'w') as f:
+                with open(os.path.join(processed_path, 'all_sess_regression_info.pkl'), 'wb') as f:
                     pickle.dump(all_sess_regression_info, f)
