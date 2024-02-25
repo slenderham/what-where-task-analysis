@@ -91,6 +91,9 @@ if __name__=='__main__':
                 task_info = task_info[trial_mask]
                 neural_data = neural_data[trial_mask]
                 # neural_data = neural_data[:,:,window_start:]
+
+                neural_data = neural_data[:, np.nonzero(np.min(neural_data.sum(0),1))[0],:]
+
                 num_trials, num_units, num_timesteps = neural_data.shape
 
                 print("aligned to: " + aligned_event + ", monkey: " + monkey_name + ", session: " + sess_date)
