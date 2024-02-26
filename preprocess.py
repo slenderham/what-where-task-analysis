@@ -32,9 +32,7 @@ if __name__ == '__main__':
     neural_path = os.path.join(root_dir, 'RasterVec_binSize_10ms/')
 
     binsize = 0.01
-    gauss_window = 0.5/binsize
-    gauss_SD = 0.05/binsize
-    # window_start = int(1/binsize)
+    gauss_SD = 0.02/binsize
 
     all_sess_regression_info = {
         'aligned_event': [],
@@ -96,9 +94,11 @@ if __name__ == '__main__':
                 trial_mask = task_info[:, 4] <= 24
                 task_info = task_info[trial_mask]
                 neural_data = neural_data[trial_mask]
-                # neural_data = neural_data[:,:,window_start:]
+                area_idx = curr_sess_neural['vectorInfo']['Array'][:].squeeze()
 
-                neural_data = neural_data[:, np.nonzero(np.min(neural_data.sum(0), 1))[0], :]
+                neuron_mask = np.nonzero(np.min(neural_data.sum(0), 1))[0]
+                neural_data = neural_data[:, neuron_mask, :]
+                area_idx = area_idx[neuron_mask].squeeze()
 
                 num_trials, num_units, num_timesteps = neural_data.shape
 
@@ -155,7 +155,7 @@ if __name__ == '__main__':
 
                 all_sess_regression_info['monkey_name'].append(monkey_name)
                 all_sess_regression_info['aligned_event'].append(aligned_event)
-                all_sess_regression_info['area_name'].append(curr_sess_neural['ArrayArea'])
+                all_sess_regression_info['area_name'].append(area_idx)
                 all_sess_regression_info['sess_date'].append(sess_date)
                 all_sess_regression_info['betas'].append(all_units_beta)
                 all_sess_regression_info['exp_vars'].append(all_units_exp_var)
