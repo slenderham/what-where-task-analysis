@@ -54,16 +54,17 @@ if __name__ == '__main__':
                        'SXC_what', 'RXS', 'RXSXC_what']
 
     regressor_expr = ['C(block_type, Sum)/C(block_id, Sum)',
-                      '(C(block_type, Sum)/C(block_id, Sum)):C_what_curr:C_where_curr',
-                      '(C(block_type, Sum)/C(block_id, Sum)):C_what_curr',
-                      'C(block_type, Sum)*C_where_curr', 'C(block_type, Sum)*R_curr',
-                      '(C(block_type, Sum)/C(block_id, Sum)):C_what_prev',
-                      'C(block_type, Sum)*C_where_prev', 'C(block_type, Sum)*R_prev',
-                      'C(block_type, Sum)*(R_prev:C_where_prev)',
-                      '(C(block_type, Sum)/C(block_id, Sum)):R_prev:C_what_prev',
-                      'C(block_type, Sum)*(C_what_curr:C_where_curr:C_what_prev)',
-                      '(C(block_type, Sum)/C(block_id, Sum)):R_prev:C_what_curr:C_where_curr',
-                      'C(block_type, Sum)*(R_prev:C_what_curr:C_where_curr:C_what_prev)']
+                       '(C(block_type, Sum)/C(block_id, Sum))*(C_what_curr:C_where_curr)',
+                       '(C(block_type, Sum)/C(block_id, Sum))*C_what_curr',
+                       'C(block_type, Sum)*C_where_curr', 'C(block_type, Sum)*R_curr',
+                       '(C(block_type, Sum)/C(block_id, Sum))*C_what_prev',
+                       'C(block_type, Sum)*C_where_prev', 'C(block_type, Sum)*R_prev',
+                       'C(block_type, Sum)*(R_prev:C_where_prev)',
+                       '(C(block_type, Sum)/C(block_id, Sum))*(R_prev:C_what_prev)',
+                       'C(block_type, Sum)*(C_what_curr:C_where_curr:C_what_prev)',
+                       '(C(block_type, Sum)/C(block_id, Sum))*(R_prev:C_what_curr:C_where_curr)',
+                       'C(block_type, Sum)*(R_prev:C_what_curr:C_where_curr:C_what_prev)']
+
 
     var_names_in_table = ['C_what_curr', 'C_where_curr', 'R_curr', 'block_type', 'block_id',
                           'C_what_prev', 'C_where_prev', 'R_prev']
@@ -97,8 +98,7 @@ if __name__ == '__main__':
                 neural_data = neural_data[trial_mask]
                 # neural_data = neural_data[:,:,window_start:]
 
-                neural_data = neural_data[:, np.nonzero(
-                    np.min(neural_data.sum(0), 1))[0], :]
+                neural_data = neural_data[:, np.nonzero(np.min(neural_data.sum(0), 1))[0], :]
 
                 num_trials, num_units, num_timesteps = neural_data.shape
 
@@ -155,7 +155,7 @@ if __name__ == '__main__':
 
                 all_sess_regression_info['monkey_name'].append(monkey_name)
                 all_sess_regression_info['aligned_event'].append(aligned_event)
-                all_sess_regression_info['area_name'].append(curr_sess_bhv['ArrayArea'])
+                all_sess_regression_info['area_name'].append(curr_sess_neural['ArrayArea'])
                 all_sess_regression_info['sess_date'].append(sess_date)
                 all_sess_regression_info['betas'].append(all_units_beta)
                 all_sess_regression_info['exp_vars'].append(all_units_exp_var)

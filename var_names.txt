@@ -1,0 +1,34 @@
+                                                          sum_sq      df  \
+Intercept                                           5.072125e-03     1.0   
+C(block_type, Sum)                                  4.205781e-04     1.0   
+C(block_type, Sum):C(block_id, Sum)                 2.199228e-03    22.0   
+C_what_curr:C_where_curr                            2.723506e-04     1.0   
+C(block_type, Sum):C_what_curr:C_where_curr         1.048399e-05     1.0   
+C(block_type, Sum):C(block_id, Sum):C_what_curr...  2.160338e-03    22.0   
+C_what_curr                                         1.915140e-04     1.0   
+C(block_type, Sum):C_what_curr                      3.457309e-07     1.0   
+C(block_type, Sum):C(block_id, Sum):C_what_curr     2.132503e-03    22.0   
+C_where_curr                                        3.240731e-06     1.0   
+C(block_type, Sum):C_where_curr                     1.373784e-04     1.0   
+R_curr                                              4.374106e-06     1.0   
+C(block_type, Sum):R_curr                           3.221690e-05     1.0   
+C_what_prev                                         3.024732e-06     1.0   
+C(block_type, Sum):C_what_prev                      8.369936e-06     1.0   
+C(block_type, Sum):C(block_id, Sum):C_what_prev     2.293373e-03    22.0   
+C_where_prev                                        7.488058e-04     1.0   
+C(block_type, Sum):C_where_prev                     8.763344e-06     1.0   
+R_prev                                              2.446756e-03     1.0   
+C(block_type, Sum):R_prev                           9.684087e-05     1.0   
+R_prev:C_where_prev                                 1.681968e-04     1.0   
+C(block_type, Sum):R_prev:C_where_prev              6.426421e-07     1.0   
+R_prev:C_what_prev                                  2.045509e-05     1.0   
+C(block_type, Sum):R_prev:C_what_prev               3.218640e-05     1.0   
+C(block_type, Sum):C(block_id, Sum):R_prev:C_wh...  2.378081e-03    22.0   
+C_what_curr:C_where_curr:C_what_prev                1.734708e-04     1.0   
+C(block_type, Sum):C_what_curr:C_where_curr:C_w...  1.820924e-05     1.0   
+R_prev:C_what_curr:C_where_curr                     2.009455e-04     1.0   
+C(block_type, Sum):R_prev:C_what_curr:C_where_curr  3.722119e-05     1.0   
+C(block_type, Sum):C(block_id, Sum):R_prev:C_wh...  1.912681e-03    22.0   
+R_prev:C_what_curr:C_where_curr:C_what_prev         2.979708e-05     1.0   
+C(block_type, Sum):R_prev:C_what_curr:C_where_c...  8.186008e-06     1.0   
+Residual                                            1.609115e-01  1765.0   
