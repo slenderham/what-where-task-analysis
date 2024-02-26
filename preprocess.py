@@ -119,7 +119,7 @@ if __name__ == '__main__':
                 X = np.concatenate([task_info, task_info_prev], axis=1)
 
                 num_betas = 158
-                num_exp_vars = 27
+                num_exp_vars = 32
 
                 all_units_beta = np.ones((num_timesteps, num_units, num_betas))*np.nan
                 all_units_exp_var = np.ones((num_timesteps, num_units, num_exp_vars))*np.nan

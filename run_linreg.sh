@@ -13,7 +13,7 @@
 #SBATCH --cpus-per-task=8
 
 # Request memory
-#SBATCH --mem=8G
+#SBATCH --mem=16G
 
 # Walltime (job duration)
 #SBATCH --time=24:00:00
