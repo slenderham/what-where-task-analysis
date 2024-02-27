@@ -139,7 +139,7 @@ if __name__ == '__main__':
 
                         # calculate effect size for anova
                         ms_error = anova_mdl.loc[:,'sum_sq'].iloc[-1]/anova_mdl.loc[:,'sum_sq'].iloc[-1]
-                        omega_sq = (anova_mdl.loc[:,'sum_sq'].iloc[:-1]-anova_mdl.loc[:,'sum_sq'].iloc[:-1]*ms_error)/ \
+                        omega_sq = (anova_mdl.loc[:,'sum_sq'].iloc[:-1]-anova_mdl.loc[:,'df'].iloc[:-1]*ms_error)/ \
                                         (anova_mdl.loc[:,'sum_sq'].sum()+ms_error)
 
                         pvals = anova_mdl.loc[:,'PR(>F)'].iloc[:-1].to_numpy().squeeze()
