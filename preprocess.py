@@ -138,7 +138,7 @@ if __name__ == '__main__':
                         anova_mdl = sm.stats.anova_lm(mdl, typ=3)
 
                         # calculate effect size for anova
-                        ms_error = anova_mdl.loc[:,'sum_sq'].iloc[-1]/anova_mdl.loc[:,'sum_sq'].iloc[-1]
+                        ms_error = anova_mdl.loc[:,'sum_sq'].iloc[-1]/anova_mdl.loc[:,'df'].iloc[-1]
                         omega_sq = (anova_mdl.loc[:,'sum_sq'].iloc[:-1]-anova_mdl.loc[:,'df'].iloc[:-1]*ms_error)/ \
                                         (anova_mdl.loc[:,'sum_sq'].sum()+ms_error)
 
