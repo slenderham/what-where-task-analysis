@@ -1,5 +1,6 @@
                                                           sum_sq      df  \
 Intercept                                           5.072125e-03     1.0   
+
 C(block_type, Sum)                                  4.205781e-04     1.0   
 C(block_type, Sum):C(block_id, Sum)                 2.199228e-03    22.0   24
 
