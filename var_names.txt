@@ -9,7 +9,7 @@ C(block_type, Sum):C_what_curr:C_where_curr         1.048399e-05     1.0
 C(block_type, Sum):C(block_id, Sum):C_what_curr...  2.160338e-03    22.0   48
 
 C_what_curr                                         1.915140e-04     1.0   
-C(block_type, Sum):C_what_curr                      3.457309e-07     1.0   
+C(block_type, Sum):C_what_curr                      3.457309e-07     1.0   50
 C(block_type, Sum):C(block_id, Sum):C_what_curr     2.132503e-03    22.0   72
 
 C_where_curr                                        3.240731e-06     1.0   

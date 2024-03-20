@@ -108,7 +108,7 @@ if __name__ == '__main__':
 
                 task_info[:, :3] = task_info[:, :3]*2-1
                 task_info[:, 3] = task_info[:, 3]*2-3
-                task_info[:, 4] = task_info[:, 4] % 12
+                task_info[:, 4] = task_info[:, 4]%12
 
                 # make the time-lagged part of the design
                 task_info_prev = np.concatenate([np.array([[0, 0, 0]]), task_info[:-1, :3]], axis=0)
@@ -153,6 +153,7 @@ if __name__ == '__main__':
                     all_units_exp_var[:, unit_idx, :] = np.stack([curr_time_results[1] for curr_time_results in linreg_anova_results])
                     all_units_pvals[:, unit_idx, :] = np.stack([curr_time_results[2] for curr_time_results in linreg_anova_results])
 
+                all_sess_regression_info['neural_data'].append(neural_data)
                 all_sess_regression_info['monkey_name'].append(monkey_name)
                 all_sess_regression_info['aligned_event'].append(aligned_event)
                 all_sess_regression_info['area_name'].append(area_idx)
