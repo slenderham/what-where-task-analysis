@@ -1,0 +1,12 @@
+[I 15:19:08.314 NotebookApp] JupyterLab extension loaded from /optnfs/python/el7/2.7-Anaconda/lib/python2.7/site-packages/jupyterlab
+[I 15:19:08.315 NotebookApp] JupyterLab application directory is /dartfs-hpc/admin/opt/python/el7/2.7-Anaconda/share/jupyter/lab
+[I 15:19:08.415 NotebookApp] Serving notebooks from local directory: /dartfs-hpc/rc/home/d/f005d7d/attn-rnn/what_where_analysis/what-where-task-analysis
+[I 15:19:08.415 NotebookApp] The Jupyter Notebook is running at:
+[I 15:19:08.415 NotebookApp] http://m11:8888/?token=041103fd7565f481ffc0dced6cd6b52dd3bb0d7a750dd232
+[I 15:19:08.415 NotebookApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
+[C 15:19:08.442 NotebookApp] 
+    
+    To access the notebook, open this file in a browser:
+        file:///dartfs-hpc/rc/home/d/f005d7d/.local/share/jupyter/runtime/nbserver-11378-open.html
+    Or copy and paste one of these URLs:
+        http://m11:8888/?token=041103fd7565f481ffc0dced6cd6b52dd3bb0d7a750dd232
