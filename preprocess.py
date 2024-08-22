@@ -6,6 +6,7 @@ import glob
 import h5py
 import re
 from scipy.ndimage import gaussian_filter
+from scipy.signal import convolve
 from tqdm import tqdm
 import scipy.io as sio
 from joblib import Parallel, delayed
@@ -32,7 +33,9 @@ if __name__ == '__main__':
     neural_path = os.path.join(root_dir, 'RasterVec_binSize_10ms/')
 
     binsize = 0.01
-    gauss_SD = 0.02/binsize
+    # gauss_SD = 0.02/binsize
+    win_size = int(0.05/binsize)
+    stride = int(0.05/binsize)
 
     all_sess_regression_info = {
         'aligned_event': [],
@@ -41,7 +44,8 @@ if __name__ == '__main__':
         'sess_date': [],
         'betas': [],
         'exp_vars': [],
-        'pvals': []
+        'pvals': [],
+        'aics': []
     }
 
     # 12 regressors, separate by blocks
@@ -80,8 +84,9 @@ if __name__ == '__main__':
                 sess_date = re.search(re.compile(
                     f'RastVect-{monkey_name}(\\d*)-binsize10ms-align2{aligned_event}.mat'), filename).groups()[0]
 
-                neural_data = gaussian_filter(
-                    curr_sess_neural['aligned2event'], gauss_SD, mode='constant', axes=2)
+                # neural_data = gaussian_filter(
+                #     curr_sess_neural['aligned2event'], gauss_SD, mode='constant', axes=2)
+                neural_data = convolve(curr_sess_neural['aligned2event'], np.ones((1,1,win_size))/win_size, mode='valid')[:,:,::stride]
 
                 bhv_filename = bhv_path+'SPKcounts_'+monkey_name+sess_date+'cue_MW_250X250ms.mat'
                 curr_sess_bhv = sio.loadmat(
@@ -124,6 +129,7 @@ if __name__ == '__main__':
                 all_units_beta = np.ones((num_timesteps, num_units, num_betas))*np.nan
                 all_units_exp_var = np.ones((num_timesteps, num_units, num_exp_vars))*np.nan
                 all_units_pvals = np.ones((num_timesteps, num_units, num_exp_vars))*np.nan
+                all_units_aics = np.ones((num_timesteps, num_units))*np.nan
 
                 for unit_idx in tqdm(range(num_units)):
                     def run_linreg_anova(time_idx):
@@ -144,7 +150,7 @@ if __name__ == '__main__':
 
                         pvals = anova_mdl.loc[:,'PR(>F)'].iloc[:-1].to_numpy().squeeze()
 
-                        return [mdl.params, omega_sq, pvals]
+                        return [mdl.params, omega_sq, pvals, mdl.aic]
 
                     linreg_anova_results = Parallel(n_jobs=args.njobs)(
                         delayed(run_linreg_anova)(time_idx) for time_idx in range(num_timesteps))
@@ -152,8 +158,9 @@ if __name__ == '__main__':
                     all_units_beta[:, unit_idx, :] = np.stack([curr_time_results[0] for curr_time_results in linreg_anova_results])
                     all_units_exp_var[:, unit_idx, :] = np.stack([curr_time_results[1] for curr_time_results in linreg_anova_results])
                     all_units_pvals[:, unit_idx, :] = np.stack([curr_time_results[2] for curr_time_results in linreg_anova_results])
+                    all_units_aics[:, unit_idx] = np.stack([curr_time_results[3] for curr_time_results in linreg_anova_results])
 
-                all_sess_regression_info['neural_data'].append(neural_data)
+                # all_sess_regression_info['neural_data'].append(neural_data)
                 all_sess_regression_info['monkey_name'].append(monkey_name)
                 all_sess_regression_info['aligned_event'].append(aligned_event)
                 all_sess_regression_info['area_name'].append(area_idx)
@@ -161,6 +168,7 @@ if __name__ == '__main__':
                 all_sess_regression_info['betas'].append(all_units_beta)
                 all_sess_regression_info['exp_vars'].append(all_units_exp_var)
                 all_sess_regression_info['pvals'].append(all_units_pvals)
+                all_sess_regression_info['aics'].append(all_units_aics)
 
                 with open(os.path.join(processed_path, 'all_sess_regression_info.pkl'), 'wb') as f:
                     pickle.dump(all_sess_regression_info, f)
