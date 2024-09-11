@@ -1,0 +1,41 @@
+[I 00:09:02.462 NotebookApp] JupyterLab extension loaded from /optnfs/python/el7/2.7-Anaconda/lib/python2.7/site-packages/jupyterlab
+[I 00:09:02.463 NotebookApp] JupyterLab application directory is /dartfs-hpc/admin/opt/python/el7/2.7-Anaconda/share/jupyter/lab
+[I 00:09:02.479 NotebookApp] Serving notebooks from local directory: /dartfs-hpc/rc/home/d/f005d7d/attn-rnn/what_where_analysis/what-where-task-analysis
+[I 00:09:02.480 NotebookApp] The Jupyter Notebook is running at:
+[I 00:09:02.480 NotebookApp] http://s12:8888/?token=0ca5a95b0fcec6e3e433b919f9d8e09dc68ab0c2d11ada1a
+[I 00:09:02.480 NotebookApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
+[C 00:09:02.497 NotebookApp] 
+    
+    To access the notebook, open this file in a browser:
+        file:///dartfs-hpc/rc/home/d/f005d7d/.local/share/jupyter/runtime/nbserver-3981022-open.html
+    Or copy and paste one of these URLs:
+        http://s12:8888/?token=0ca5a95b0fcec6e3e433b919f9d8e09dc68ab0c2d11ada1a
+[I 00:24:28.578 NotebookApp] Kernel started: 1a480d04-46b0-43e1-8234-b91a904f99fa
+[I 00:25:49.374 NotebookApp] Saving file at /decoding_analysis.ipynb
+[I 00:25:49.989 NotebookApp] Saving file at /decoding_analysis.ipynb
+[I 00:25:50.065 NotebookApp] Saving file at /decoding_analysis.ipynb
+[I 00:25:50.275 NotebookApp] Saving file at /decoding_analysis.ipynb
+[I 00:25:50.346 NotebookApp] Saving file at /decoding_analysis.ipynb
+[I 00:25:50.425 NotebookApp] Starting buffering for 1a480d04-46b0-43e1-8234-b91a904f99fa:8b911d3a1f49459c87b28ed04037a55c
+[W 00:25:52.812 NotebookApp] Notebook encoding_analysis.ipynb is not trusted
+[I 00:25:54.552 NotebookApp] Kernel started: 134c8df5-6bd8-49cf-925b-ba3db32bc0bf
+[I 00:27:57.995 NotebookApp] Saving file at /encoding_analysis.ipynb
+[W 00:27:58.001 NotebookApp] Notebook encoding_analysis.ipynb is not trusted
+[I 00:29:54.743 NotebookApp] Saving file at /encoding_analysis.ipynb
+[W 00:29:54.759 NotebookApp] Notebook encoding_analysis.ipynb is not trusted
+[I 00:29:57.524 NotebookApp] Saving file at /encoding_analysis.ipynb
+[W 00:29:57.525 NotebookApp] Notebook encoding_analysis.ipynb is not trusted
+[I 00:30:03.012 NotebookApp] Saving file at /encoding_analysis.ipynb
+[W 00:30:03.013 NotebookApp] Notebook encoding_analysis.ipynb is not trusted
+[I 00:31:56.991 NotebookApp] Saving file at /encoding_analysis.ipynb
+[W 00:31:56.992 NotebookApp] Notebook encoding_analysis.ipynb is not trusted
+[I 00:33:42.221 NotebookApp] Saving file at /encoding_analysis.ipynb
+[W 00:33:42.233 NotebookApp] Notebook encoding_analysis.ipynb is not trusted
+[I 00:33:56.286 NotebookApp] Saving file at /encoding_analysis.ipynb
+[W 00:33:56.287 NotebookApp] Notebook encoding_analysis.ipynb is not trusted
+[I 00:37:56.373 NotebookApp] Saving file at /encoding_analysis.ipynb
+[W 00:37:56.375 NotebookApp] Notebook encoding_analysis.ipynb is not trusted
+[I 00:41:56.449 NotebookApp] Saving file at /encoding_analysis.ipynb
+[W 00:41:56.450 NotebookApp] Notebook encoding_analysis.ipynb is not trusted
+[W 01:06:27.759 NotebookApp] WebSocket ping timeout after 119960 ms.
+[I 01:06:32.767 NotebookApp] Starting buffering for 134c8df5-6bd8-49cf-925b-ba3db32bc0bf:96d98a2883d041328b451e92ac42ac1c

@@ -1,0 +1,198 @@
+import numpy as np
+import statsmodels.formula.api as smf
+import statsmodels.api as sm
+import pandas as pd
+import glob
+import h5py
+import re
+from scipy.ndimage import gaussian_filter
+from scipy.signal import convolve
+from tqdm import tqdm
+import scipy.io as sio
+from joblib import Parallel, delayed
+import os
+import pickle
+import argparse
+
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--njobs", default=16, help="number of cores to use")
+    args = parser.parse_args()
+
+    monkey_names = ["W", "V"]
+    # aligned_events = ["StimOnset", "Choice", "RewFeedback"]
+    aligned_events = ["StimOnset"]
+
+    # root_dir = '/Users/f005d7d/Documents/Attn_MdPRL/what-where-task/'
+    root_dir = '/dartfs-hpc/scratch/f005d7d/what_where_analysis/'
+
+    bhv_path = os.path.join(root_dir, 'Behavior/')
+    processed_path = os.path.join(root_dir, 'processed/')
+    neural_path = os.path.join(root_dir, 'RasterVec_binSize_10ms/')
+
+    binsize = 0.01
+    # gauss_SD = 0.02/binsize
+    win_size = int(0.05/binsize)
+    stride = int(0.05/binsize)
+
+    num_shuffles = 50
+    rng = np.random.default_rng()
+
+    all_sess_regression_info = {
+        'aligned_event': [],
+        'monkey_name': [],
+        'area_name': [],
+        'sess_date': [],
+        'betas': [],
+        'pvals': [],
+        'contr_pvals': []
+    }
+
+    # 12 regressors, separate by blocks
+    regressor_names = ['type', 'block',
+                       'S_curr', 'C_what_curr', 'C_where_curr', 'R_curr',
+                       'C_what_prev', 'C_where_prev', 'R_prev',
+                       'RXC_where', 'RXC_what',
+                       'SXC_what', 'RXS', 'RXSXC_what']
+
+    regressor_expr = ['C(block_type, Sum)/C(block_id, Sum)',
+                       '(C(block_type, Sum)/C(block_id, Sum))*(C_what_curr:C_where_curr)',
+                       '(C(block_type, Sum)/C(block_id, Sum))*C_what_curr',
+                       'C(block_type, Sum)*C_where_curr', 'C(block_type, Sum)*R_curr',
+                       '(C(block_type, Sum)/C(block_id, Sum))*C_what_prev',
+                       'C(block_type, Sum)*C_where_prev', 'C(block_type, Sum)*R_prev',
+                       'C(block_type, Sum)*(R_prev:C_where_prev)',
+                       '(C(block_type, Sum)/C(block_id, Sum))*(R_prev:C_what_prev)',
+                       'C(block_type, Sum)*(C_what_curr:C_where_curr:C_what_prev)',
+                       '(C(block_type, Sum)/C(block_id, Sum))*(R_prev:C_what_curr:C_where_curr)',
+                       'C(block_type, Sum)*(R_prev:C_what_curr:C_where_curr:C_what_prev)']
+
+
+    var_names_in_table = ['C_what_curr', 'C_where_curr', 'R_curr', 'block_type', 'block_id',
+                          'C_what_prev', 'C_where_prev', 'R_prev']
+
+    formula = 'fr~'+'+'.join(regressor_expr)
+
+    contrasts_to_test = []
+    base_inds = [72, 100, 104, 130, 156]
+
+    num_betas = 158
+    num_exp_vars = 32
+
+    for base_ind in base_inds:
+        curr_contr_what = np.zeros(num_betas)
+        curr_contr_what[base_ind] = 1
+        curr_contr_what[base_ind+1] = 1
+        contrasts_to_test.append(curr_contr_what)
+
+        curr_contr_where = np.zeros(num_betas)
+        curr_contr_where[base_ind] = 1
+        curr_contr_where[base_ind+1] = -1
+        contrasts_to_test.append(curr_contr_where)
+
+    contrasts_to_test = np.stack(contrasts_to_test)
+    num_contrs = contrasts_to_test.shape[0]
+
+    for event_idx, aligned_event in enumerate(aligned_events):
+        for monkey_idx, monkey_name in enumerate(monkey_names):
+            files = glob.glob(
+                f'{neural_path}/{aligned_event}/RastVect-{monkey_name}*-binsize10ms-align2{aligned_event}.mat')
+            for sess_idx in range(len(files)):
+                filename = files[sess_idx]
+
+                curr_sess_neural = h5py.File(filename)
+                sess_date = re.search(re.compile(
+                    f'RastVect-{monkey_name}(\\d*)-binsize10ms-align2{aligned_event}.mat'), filename).groups()[0]
+
+                # neural_data = gaussian_filter(
+                #     curr_sess_neural['aligned2event'], gauss_SD, mode='constant', axes=2)
+                neural_data = convolve(curr_sess_neural['aligned2event'], np.ones((1,1,win_size))/win_size, mode='valid')[:,:,::stride]
+
+                bhv_filename = bhv_path+'SPKcounts_'+monkey_name+sess_date+'cue_MW_250X250ms.mat'
+                curr_sess_bhv = sio.loadmat(
+                    bhv_path+'SPKcounts_'+monkey_name+sess_date+'cue_MW_250X250ms.mat')
+                task_info = curr_sess_bhv['Y']
+
+                # only keep chosen image, chosen loc, reward, block type, block id
+                task_info = task_info[:, [0, 1, 2, 9, 7]].astype(float)
+
+                trial_mask = task_info[:, 4] <= 24
+                task_info = task_info[trial_mask]
+                neural_data = neural_data[trial_mask]
+                area_idx = curr_sess_neural['vectorInfo']['Array'][:].squeeze()
+
+                neuron_mask = np.nonzero(np.min(neural_data.sum(0), 1))[0]
+                neural_data = neural_data[:, neuron_mask, :]
+                area_idx = area_idx[neuron_mask].squeeze()
+
+                num_trials, num_units, num_timesteps = neural_data.shape
+
+                print("--------------------------------------------------------------------")
+                print("aligned to: " + aligned_event + ", monkey: " +
+                      monkey_name + ", session: " + sess_date + ", #trials=" + str(num_trials))
+
+                task_info[:, :3] = task_info[:, :3]*2-1
+                task_info[:, 3] = task_info[:, 3]*2-3
+                task_info[:, 4] = task_info[:, 4]%12
+
+                # make the time-lagged part of the design
+                task_info_prev = np.concatenate([np.array([[0, 0, 0]]), task_info[:-1, :3]], axis=0)
+
+                # put together design matrix
+                # C_what_curr, C_where_curr, R_curr, block_id, block_type
+                # C_what_prev, C_where_prev, R_curr
+                X = np.concatenate([task_info, task_info_prev], axis=1)
+
+                all_units_beta = np.ones((num_timesteps, num_units, num_shuffles, num_betas))*np.nan
+                all_units_pvals = np.ones((num_timesteps, num_units, num_shuffles, num_exp_vars))*np.nan
+                all_units_contr_pvals = np.ones((num_timesteps, num_units, num_shuffles, num_contrs))*np.nan
+
+                for shuffle_idx in tqdm(range(num_shuffles)):
+                    indices_for_shuffle = rng.permutation(np.arange(num_trials), axis=0)
+                    for unit_idx in range(num_units):
+                        def run_linreg_anova(time_idx):
+                            curr_unit_time_fr = neural_data[:, unit_idx, time_idx]
+                            curr_unit_time_fr = curr_unit_time_fr[indices_for_shuffle]
+                            tbl = pd.DataFrame(np.concatenate([curr_unit_time_fr[:, None], X], axis=1),
+                                            columns=['fr']+var_names_in_table)
+                            
+                            # fit linear model
+                            mdl = smf.ols(formula, tbl).fit()
+                            contr_pvals = np.array(mdl.t_test(contrasts_to_test).pvalue)
+                            
+                            # calculate anova
+                            anova_mdl = sm.stats.anova_lm(mdl, typ=3)
+                            pvals = anova_mdl.loc[:,'PR(>F)'].iloc[:-1].to_numpy().squeeze()
+
+                            return [mdl.params, pvals, contr_pvals]
+
+                        linreg_anova_results = Parallel(n_jobs=args.njobs)(
+                            delayed(run_linreg_anova)(time_idx) for time_idx in range(num_timesteps))
+
+                        all_units_beta[:, unit_idx, shuffle_idx, :] = \
+                            np.stack([curr_time_results[0] for curr_time_results in linreg_anova_results])
+                        all_units_pvals[:, unit_idx, shuffle_idx, :] = \
+                            np.stack([curr_time_results[1] for curr_time_results in linreg_anova_results])
+                        all_units_contr_pvals[:, unit_idx, shuffle_idx, :] = \
+                            np.stack([curr_time_results[2] for curr_time_results in linreg_anova_results])
+
+                    '''
+                    bootstrapping for the null distribution of frac. significant cells and correlation between coefficients
+                    for each unit, shuffle within each block N times
+                    then sample 1000 combinations to get random populations
+                    '''
+
+                # all_sess_regression_info['neural_data'].append(neural_data)
+                all_sess_regression_info['monkey_name'].append(monkey_name)
+                all_sess_regression_info['aligned_event'].append(aligned_event)
+                all_sess_regression_info['area_name'].append(area_idx)
+                all_sess_regression_info['sess_date'].append(sess_date)
+                all_sess_regression_info['betas'].append(all_units_beta)
+                all_sess_regression_info['pvals'].append(all_units_pvals)
+                all_sess_regression_info['contr_pvals'].append(all_units_contr_pvals)
+
+
+                with open(os.path.join(processed_path, 'all_sess_regression_info_shuffled.pkl'), 'wb') as f:
+                    pickle.dump(all_sess_regression_info, f)

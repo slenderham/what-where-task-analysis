@@ -45,7 +45,8 @@ if __name__ == '__main__':
         'betas': [],
         'exp_vars': [],
         'pvals': [],
-        'aics': []
+        'aics': [],
+        'contr_pvals': []
     }
 
     # 12 regressors, separate by blocks
@@ -72,6 +73,26 @@ if __name__ == '__main__':
                           'C_what_prev', 'C_where_prev', 'R_prev']
 
     formula = 'fr~'+'+'.join(regressor_expr)
+
+    contrasts_to_test = []
+    base_inds = [72, 100, 104, 130, 156]
+
+    num_betas = 158
+    num_exp_vars = 32
+
+    for base_ind in base_inds:
+        curr_contr_what = np.zeros(num_betas)
+        curr_contr_what[base_ind] = 1
+        curr_contr_what[base_ind+1] = 1
+        contrasts_to_test.append(curr_contr_what)
+
+        curr_contr_where = np.zeros(num_betas)
+        curr_contr_where[base_ind] = 1
+        curr_contr_where[base_ind+1] = -1
+        contrasts_to_test.append(curr_contr_where)
+
+    contrasts_to_test = np.stack(contrasts_to_test)
+    num_contrs = contrasts_to_test.shape[0]
 
     for event_idx, aligned_event in enumerate(aligned_events):
         for monkey_idx, monkey_name in enumerate(monkey_names):
@@ -123,12 +144,11 @@ if __name__ == '__main__':
                 # C_what_prev, C_where_prev, R_curr
                 X = np.concatenate([task_info, task_info_prev], axis=1)
 
-                num_betas = 158
-                num_exp_vars = 32
 
                 all_units_beta = np.ones((num_timesteps, num_units, num_betas))*np.nan
                 all_units_exp_var = np.ones((num_timesteps, num_units, num_exp_vars))*np.nan
                 all_units_pvals = np.ones((num_timesteps, num_units, num_exp_vars))*np.nan
+                all_units_contr_pvals = np.ones((num_timesteps, num_units, num_contrs))*np.nan
                 all_units_aics = np.ones((num_timesteps, num_units))*np.nan
 
                 for unit_idx in tqdm(range(num_units)):
@@ -139,6 +159,7 @@ if __name__ == '__main__':
                         
                         # fit linear model
                         mdl = smf.ols(formula, tbl).fit()
+                        contr_pvals = np.array(mdl.t_test(contrasts_to_test).pvalue)
                         
                         # calculate anova
                         anova_mdl = sm.stats.anova_lm(mdl, typ=3)
@@ -150,7 +171,7 @@ if __name__ == '__main__':
 
                         pvals = anova_mdl.loc[:,'PR(>F)'].iloc[:-1].to_numpy().squeeze()
 
-                        return [mdl.params, omega_sq, pvals, mdl.aic]
+                        return [mdl.params, omega_sq, pvals, contr_pvals, mdl.aic]
 
                     linreg_anova_results = Parallel(n_jobs=args.njobs)(
                         delayed(run_linreg_anova)(time_idx) for time_idx in range(num_timesteps))
@@ -158,7 +179,14 @@ if __name__ == '__main__':
                     all_units_beta[:, unit_idx, :] = np.stack([curr_time_results[0] for curr_time_results in linreg_anova_results])
                     all_units_exp_var[:, unit_idx, :] = np.stack([curr_time_results[1] for curr_time_results in linreg_anova_results])
                     all_units_pvals[:, unit_idx, :] = np.stack([curr_time_results[2] for curr_time_results in linreg_anova_results])
-                    all_units_aics[:, unit_idx] = np.stack([curr_time_results[3] for curr_time_results in linreg_anova_results])
+                    all_units_contr_pvals[:, unit_idx, :] = np.stack([curr_time_results[3] for curr_time_results in linreg_anova_results])
+                    all_units_aics[:, unit_idx] = np.stack([curr_time_results[4] for curr_time_results in linreg_anova_results])
+
+                    '''
+                    bootstrapping for the null distribution of frac. significant cells and correlation between coefficients
+                    for each unit, shuffle within each block N times
+                    then sample 1000 combinations to get random populations
+                    '''
 
                 # all_sess_regression_info['neural_data'].append(neural_data)
                 all_sess_regression_info['monkey_name'].append(monkey_name)
@@ -168,7 +196,9 @@ if __name__ == '__main__':
                 all_sess_regression_info['betas'].append(all_units_beta)
                 all_sess_regression_info['exp_vars'].append(all_units_exp_var)
                 all_sess_regression_info['pvals'].append(all_units_pvals)
+                all_sess_regression_info['contr_pvals'].append(all_units_contr_pvals)
                 all_sess_regression_info['aics'].append(all_units_aics)
 
-                with open(os.path.join(processed_path, 'all_sess_regression_info.pkl'), 'wb') as f:
+
+                with open(os.path.join(processed_path, 'all_sess_regression_info_with_contr.pkl'), 'wb') as f:
                     pickle.dump(all_sess_regression_info, f)
