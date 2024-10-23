@@ -1,5 +1,6 @@
 import numpy as np
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, SGDClassifier
+from sklearn.svm import LinearSVC
 from sklearn.model_selection import cross_val_score
 import pandas as pd
 import glob
@@ -46,31 +47,6 @@ if __name__ == '__main__':
         'ws': [],
         'accs': []
     }
-
-    # 12 regressors, separate by blocks
-    regressor_names = ['type', 'block',
-                       'S_curr', 'C_what_curr', 'C_where_curr', 'R_curr',
-                       'C_what_prev', 'C_where_prev', 'R_prev',
-                       'RXC_where', 'RXC_what',
-                       'SXC_what', 'RXS', 'RXSXC_what']
-
-    regressor_expr = ['C(block_type, Sum)/C(block_id, Sum)',
-                       '(C(block_type, Sum)/C(block_id, Sum))*(C_what_curr:C_where_curr)',
-                       '(C(block_type, Sum)/C(block_id, Sum))*C_what_curr',
-                       'C(block_type, Sum)*C_where_curr', 'C(block_type, Sum)*R_curr',
-                       '(C(block_type, Sum)/C(block_id, Sum))*C_what_prev',
-                       'C(block_type, Sum)*C_where_prev', 'C(block_type, Sum)*R_prev',
-                       'C(block_type, Sum)*(R_prev:C_where_prev)',
-                       '(C(block_type, Sum)/C(block_id, Sum))*(R_prev:C_what_prev)',
-                       'C(block_type, Sum)*(C_what_curr:C_where_curr:C_what_prev)',
-                       '(C(block_type, Sum)/C(block_id, Sum))*(R_prev:C_what_curr:C_where_curr)',
-                       'C(block_type, Sum)*(R_prev:C_what_curr:C_where_curr:C_what_prev)']
-
-
-    var_names_in_table = ['C_what_curr', 'C_where_curr', 'R_curr', 'block_type', 'block_id',
-                          'C_what_prev', 'C_where_prev', 'R_prev']
-
-    formula = 'fr~'+'+'.join(regressor_expr)
 
     for event_idx, aligned_event in enumerate(aligned_events):
         for monkey_idx, monkey_name in enumerate(monkey_names):
@@ -175,20 +151,20 @@ if __name__ == '__main__':
                     curr_test_data_selector = data_selectors[idx_dec_test](all_task_info)
                     curr_label = label_encoder[idx_dec_test](all_task_info)[curr_test_data_selector]
 
-                    def run_logistic_reg(time_idx):
+                    def run_decoding(time_idx):
                         curr_time_fr = neural_data[:, :, time_idx]
                         curr_time_fr = curr_time_fr[curr_test_data_selector]
                         
-                        # fit logistic regression for CV
+                        # fit decoding for CV
                         all_dec_accs = []
                         for _ in range(num_resamples):
-                            clf_cv = LogisticRegression(C=np.inf)
-                            cv_accs = cross_val_score(clf_cv, curr_time_fr, curr_label, cv=5)
+                            clf_cv = SGDClassifier(alpha=1e-6, loss='hinge', max_iter=1000, tol=1e-4)
+                            cv_accs = cross_val_score(clf_cv, curr_time_fr, curr_label, cv=10)
                             all_dec_accs.append(np.mean(cv_accs))
                         all_dec_accs = np.stack(all_dec_accs).flatten()
 
-                        # fit logistic regression for all
-                        clf_full = LogisticRegression(C=np.inf).fit(curr_time_fr, curr_label)
+                        # fit decoding for all
+                        clf_full = SGDClassifier(alpha=1e-6, loss='hinge', max_iter=1000, tol=1e-4).fit(curr_time_fr, curr_label)
                         assert(len(clf_full.classes_)==2)
 
                         all_ws = np.concatenate([clf_full.intercept_, clf_full.coef_.squeeze()])
@@ -196,7 +172,7 @@ if __name__ == '__main__':
                         return [all_ws, all_dec_accs]
 
                     decoding_results = Parallel(n_jobs=args.njobs)(
-                        delayed(run_logistic_reg)(time_idx) for time_idx in range(num_timesteps))
+                        delayed(run_decoding)(time_idx) for time_idx in range(num_timesteps))
 
                     all_test_ws[:, idx_dec_test, :] = np.stack([curr_time_results[0] for curr_time_results in decoding_results])
                     all_test_accs[:, idx_dec_test, :] = np.stack([curr_time_results[1] for curr_time_results in decoding_results])
