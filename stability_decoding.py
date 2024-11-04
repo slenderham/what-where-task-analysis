@@ -36,9 +36,8 @@ if __name__ == '__main__':
     # gauss_SD = 0.02/binsize
     win_size = int(0.05/binsize)
     stride = int(0.05/binsize)
-    num_samples = 100
 
-    all_sess_cross_decoding_info = {
+    all_sess_stability_decoding_info = {
         'aligned_event': [],
         'monkey_name': [],
         'area_name': [],
@@ -120,81 +119,65 @@ if __name__ == '__main__':
                 '''
                 data_selectors = [
                     lambda x: (x[:, 3]==-1) & (x[:, 7]==-1), lambda x: (x[:, 3]==1) & (x[:, 7]==-1),
-                    lambda x: (x[:, 3]==-1) & (x[:, 7]==1), lambda x: (x[:, 3]==1) & (x[:, 7]==1),
-                    lambda x: (x[:, 3]==-1) & (x[:, 7]==-1), lambda x: (x[:, 3]==1) & (x[:, 7]==-1),
-                    lambda x: (x[:, 3]==-1) & (x[:, 7]==1), lambda x: (x[:, 3]==1) & (x[:, 7]==1),
+                    lambda x: (x[:, 3]==-1) & (x[:, 7]==1), lambda x: (x[:, 3]==1) & (x[:, 7]==1)
                 ]
 
                 '''
                 train on C_where_curr
                 '''
-                label_encoder_train = [
-                    lambda x: x[:, 6], lambda x: x[:, 6], 
-                    lambda x: x[:, 6], lambda x: x[:, 6],
-                    lambda x: x[:, 0]*x[:, 1]*x[:, 5], lambda x: x[:, 0]*x[:, 1]*x[:, 5], 
-                    lambda x: x[:, 0]*x[:, 1]*x[:, 5], lambda x: x[:, 0]*x[:, 1]*x[:, 5], 
+                label_encoder = [
+                    lambda x: x[:, 1], lambda x: x[:, 6], lambda x: x[:, 0]*x[:, 1]*x[:, 5]
                 ]
 
-                '''
-                test on C_where_prev, SXC_what_prev
-                '''
-                label_encoder_test = lambda x: x[:, 1]
+                num_labels = len(label_encoder)
+                num_data_trains = len(data_selectors)
+                num_data_tests = len(data_selectors)-1
 
-                num_dec_trains = len(data_selectors)
+                all_test_accs = np.ones((num_timesteps, num_labels, num_data_trains, num_data_tests))*np.nan
 
-                all_test_ws = np.ones((num_timesteps, num_dec_trains, num_units+1))*np.nan
-                all_test_accs = np.ones((num_timesteps, num_dec_trains, num_timesteps, num_samples))*np.nan
+                for idx_label in tqdm(range(num_labels)):
+                    for idx_data_train in range(num_data_trains):
+                        
+                        ''' train on one variable in one set of conditions'''
+                        curr_train_data_selector = data_selectors[idx_data_train](all_task_info)
+                        curr_train_label = label_encoder[idx_label](all_task_info)[curr_train_data_selector]
 
-                for idx_dec_train in tqdm(range(num_dec_trains)):
+                        def run_decoding(time_idx):
+                            # select one condition for fitting choice decoder
+                            curr_time_fr = neural_data[:, :, time_idx]
+                            curr_time_train_fr = curr_time_fr[curr_train_data_selector]
+
+                            clf = SGDClassifier(alpha=1e-6, loss='hinge', max_iter=1000, tol=1e-4)
+                            clf = clf.fit(curr_time_train_fr, curr_train_label)
                     
-                    curr_test_data_selector = data_selectors[idx_dec_train](all_task_info)
-                    curr_label = label_encoder_train[idx_dec_train](all_task_info)[curr_test_data_selector]
+                            curr_time_dec_accs = []
 
-                    def run_decoding(time_idx):
-                        # select one timestep for fitting choice decoder
-                        curr_time_fr = neural_data[:, :, time_idx]
-                        curr_time_fr = curr_time_fr[curr_test_data_selector]
+                            for idx_data_test in range(num_data_trains):
+                                if idx_data_train==idx_data_test:
+                                    continue
 
-                        all_samples_dec_accs = []
+                                curr_test_data_selector = data_selectors[idx_data_test](all_task_info)
+                                curr_test_label = label_encoder[idx_label](all_task_info)[curr_test_data_selector]
 
-                        for _ in range(num_samples):
-                            kf = KFold(n_splits=10)
-                            curr_sample_dec_accs = []
-                            for (train_index, test_index) in kf.split(curr_time_fr):
-                                # fit decoding for cross-variable testing
-                                clf = SGDClassifier(alpha=1e-6, loss='hinge', max_iter=1000, tol=1e-4)
-                                clf = clf.fit(curr_time_fr[train_index], curr_label[train_index])
+                                curr_time_test_fr = curr_time_fr[curr_test_data_selector]
 
-                                # get labels for testing
-                                curr_test_label = label_encoder_test(all_task_info)[curr_test_data_selector]
+                                curr_time_dec_accs.append(clf.score(curr_time_test_fr, curr_test_label))
 
-                                # for each timestep, test on the variable to be tested
-                                curr_fold_dec_accs = [] # num_timesteps
-                                for idx_time_test in range(num_timesteps):
-                                    curr_test_time_fr = neural_data[:, :, idx_time_test]
-                                    curr_test_time_fr = curr_test_time_fr[curr_test_data_selector]
-                                    curr_fold_dec_accs.append(clf.score(curr_test_time_fr[test_index], curr_test_label[test_index]))
+                            curr_time_dec_accs = np.array(curr_time_dec_accs) # num_data_tests
 
-                                curr_sample_dec_accs.append(np.array(curr_fold_dec_accs)) # 10Xnum_timesteps
+                            return curr_time_dec_accs
 
-                            curr_sample_dec_accs = np.stack(curr_sample_dec_accs)
-                            all_samples_dec_accs.append(np.mean(curr_sample_dec_accs, axis=0))
+                        decoding_results = Parallel(n_jobs=args.njobs)(
+                            delayed(run_decoding)(time_idx) for time_idx in range(num_timesteps))
 
-                        all_samples_dec_accs = np.stack(all_samples_dec_accs, axis=-1) # num_timesteps X num_samples
-
-                        return all_samples_dec_accs
-
-                    decoding_results = Parallel(n_jobs=args.njobs)(
-                        delayed(run_decoding)(time_idx) for time_idx in range(num_timesteps))
-
-                    all_test_accs[:, idx_dec_train, :] = np.stack([curr_time_results for curr_time_results in decoding_results])
+                        all_test_accs[:, idx_label, idx_data_train, :] = np.stack([curr_time_results for curr_time_results in decoding_results])
 
                 # all_sess_regression_info['neural_data'].append(neural_data)
-                all_sess_cross_decoding_info['monkey_name'].append(monkey_name)
-                all_sess_cross_decoding_info['aligned_event'].append(aligned_event)
-                all_sess_cross_decoding_info['area_name'].append(area_idx)
-                all_sess_cross_decoding_info['sess_date'].append(sess_date)
-                all_sess_cross_decoding_info['accs'].append(all_test_accs)
+                all_sess_stability_decoding_info['monkey_name'].append(monkey_name)
+                all_sess_stability_decoding_info['aligned_event'].append(aligned_event)
+                all_sess_stability_decoding_info['area_name'].append(area_idx)
+                all_sess_stability_decoding_info['sess_date'].append(sess_date)
+                all_sess_stability_decoding_info['accs'].append(all_test_accs)
 
-                with open(os.path.join(processed_path, 'all_sess_cross_decoding_info.pkl'), 'wb') as f:
-                    pickle.dump(all_sess_cross_decoding_info, f)
+                with open(os.path.join(processed_path, 'all_sess_stability_decoding_info.pkl'), 'wb') as f:
+                    pickle.dump(all_sess_stability_decoding_info, f)
