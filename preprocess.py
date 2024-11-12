@@ -23,7 +23,7 @@ if __name__ == '__main__':
 
     monkey_names = ["W", "V"]
     # aligned_events = ["StimOnset", "Choice", "RewFeedback"]
-    aligned_events = ["StimOnset"]
+    aligned_events = ["SaccadeOnset"]
 
     # root_dir = '/Users/f005d7d/Documents/Attn_MdPRL/what-where-task/'
     root_dir = '/dartfs-hpc/scratch/f005d7d/what_where_analysis/'
@@ -200,5 +200,5 @@ if __name__ == '__main__':
                 all_sess_regression_info['aics'].append(all_units_aics)
 
 
-                with open(os.path.join(processed_path, 'all_sess_regression_info_with_contr.pkl'), 'wb') as f:
+                with open(os.path.join(processed_path, 'all_sess_regression_info_aligned_to_choice.pkl'), 'wb') as f:
                     pickle.dump(all_sess_regression_info, f)
