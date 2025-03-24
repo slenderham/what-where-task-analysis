@@ -33,7 +33,7 @@ class WhatAndWhereTask():
             'stim_inputs',
             'rewards',
             'reward_probs',
-            'target'
+            'targets'
         ]}
         for sess_idx in range(batch_size):
             curr_sess_trials_info = self._generate_single_trial(trials_per_block, reversal_interval, 
@@ -122,7 +122,7 @@ class WhatAndWhereTask():
         return {
             'stim_configs': stim_configs,
             'stim_inputs': stim_inputs,
-            'rewards': rewards,
+            'rewards': rewards.astype(int),
             'reward_probs': reward_probs,
             'targets': np.argmax(reward_probs, -1)
         }
@@ -138,4 +138,4 @@ if __name__=='__main__':
     print(np.unique(all_trials_info['stim_configs'], return_counts=True))
     print(np.unique(all_trials_info['rewards'], return_counts=True))
     print(np.unique(all_trials_info['reward_probs'], return_counts=True))
-    print(np.unique(all_trials_info['target'], return_counts=True))
+    print(np.unique(all_trials_info['targets'], return_counts=True))
