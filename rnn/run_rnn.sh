@@ -17,6 +17,5 @@ python train.py --cuda\
         --l2w 1e-6\
         --init_spectral 1.0\
         --balance_ei\
-        --action_input\
         --learning_rate 1e-3\
         --exp_dir exp/test$SLURM_ARRAY_TASK_ID

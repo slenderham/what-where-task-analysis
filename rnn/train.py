@@ -63,7 +63,7 @@ def train(model, iters):
                 'action': torch.zeros(args.batch_size, 2, device=device), # left/right
             }
 
-            _, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_fixation, 
+            output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_fixation, 
                                             neumann_order=args.neumann_order,
                                             hidden=hidden, w_hidden=w_hidden, 
                                             update_w=False)
@@ -163,12 +163,12 @@ def eval(model, epoch):
     model.eval()
     with torch.no_grad():
         losses = []
-        for batch_idx in range(args.eval_sample):
+        for batch_idx in range(args.eval_samples):
             trial_info = what_where_task.generate_trials(
                 batch_size = args.batch_size,
                 trials_per_block = args.trials_per_test_block, 
-                reversal_interval = [args.trials_per_test_block-args.test_reversal_interval_range//2, 
-                                    args.trials_per_test_block+args.test_reversal_interval_range//2,]
+                reversal_interval = [args.trials_per_test_block//2-args.test_reversal_interval_range//2, 
+                                    args.trials_per_test_block//2+args.test_reversal_interval_range//2,]
             ) 
             stim_inputs = trial_info['stim_inputs'].to(device, dtype=torch.float)
             rewards = trial_info['rewards'].to(device)
@@ -302,7 +302,7 @@ if __name__ == "__main__":
     else:
         device = torch.device('cuda' if args.cuda else 'cpu')
 
-    log_interval = 10
+    log_interval = 50
     what_where_task = WhatAndWhereTask(args.dt, args.stim_dims,
                                        [args.reward_probs_high, 1-args.reward_probs_high])
 
@@ -314,7 +314,7 @@ if __name__ == "__main__":
     }
 
     output_config = {
-        'action': (3, [0]), # fixation, left, right
+        'action': (3, [0]), # left, right, fixation
     }
 
     total_trial_time = what_where_task.times['ITI']+\
