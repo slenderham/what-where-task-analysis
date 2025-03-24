@@ -9,7 +9,7 @@ from scipy.stats import ortho_group
 class WhatAndWhereTask():
     def __init__(self, dt, stim_dims, reward_schedule):
 
-        self.time = {
+        self.times = {
             'ITI': 0.2,
             'fixation_time': 0.4,
             'stim_time': 0.8,
@@ -17,10 +17,10 @@ class WhatAndWhereTask():
         }
         self.dt = dt
 
-        self.T_ITI = int(self.time['ITI']/self.dt)
-        self.T_fixation = int(self.time['fixation_time']/self.dt)
-        self.T_stim = int(self.time['stim_time']/self.dt)
-        self.T_choice = int(self.time['choice_reward_time']/self.dt)
+        self.T_ITI = int(self.times['ITI']/self.dt)
+        self.T_fixation = int(self.times['fixation_time']/self.dt)
+        self.T_stim = int(self.times['stim_time']/self.dt)
+        self.T_choice = int(self.times['choice_reward_time']/self.dt)
 
         self.stim_dims = stim_dims
         self.reward_schedule = reward_schedule
@@ -124,7 +124,7 @@ class WhatAndWhereTask():
             'stim_inputs': stim_inputs,
             'rewards': rewards,
             'reward_probs': reward_probs,
-            'target': np.argmax(reward_probs, -1)
+            'targets': np.argmax(reward_probs, -1)
         }
 
 if __name__=='__main__':
