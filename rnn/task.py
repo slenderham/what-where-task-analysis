@@ -4,13 +4,12 @@ from matplotlib import pyplot as plt
 import os
 import torch.nn.functional as F
 from scipy.stats import norm
-from scipy.stats import ortho_group
 
 class WhatAndWhereTask():
     def __init__(self, dt, stim_dims, reward_schedule):
 
         self.times = {
-            'ITI': 0.2,
+            'ITI': 0.4,
             'fixation_time': 0.4,
             'stim_time': 0.8,
             'choice_reward_time': 0.6
@@ -58,14 +57,14 @@ class WhatAndWhereTask():
             np.array([0, 1]), repeats=trials_per_block//2
         ))
 
-
         '''sample stim input to network'''
-        img_reps = ortho_group.rvs(self.stim_dims)[:2]+1 # add 1 to ensure positivity
+        img_reps = np.random.randn(self.stim_dims)
+        img_reps = img_reps/np.linalg.norm(img_reps)
+        img_reps = np.stack([1+img_reps, 1-img_reps], axis=0)
         stim_inputs = np.concatenate([
             img_reps[stim_configs], img_reps[1-stim_configs]
         ], axis=-1) # (n_trials, 2*n_dims)
         
-
         '''get reward probabilities'''
         initial_better_option = np.random.randint(2)
         reversal_point = np.random.randint(reversal_interval[0]-1, reversal_interval[1])
