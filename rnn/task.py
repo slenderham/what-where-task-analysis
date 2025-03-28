@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from scipy.stats import norm
 
 class WhatAndWhereTask():
-    def __init__(self, dt, stim_dims, reward_schedule):
+    def __init__(self, dt, stim_dims):
 
         self.times = {
             'ITI': 0.4,
@@ -22,10 +22,9 @@ class WhatAndWhereTask():
         self.T_choice = int(self.times['choice_reward_time']/self.dt)
 
         self.stim_dims = stim_dims
-        self.reward_schedule = reward_schedule
 
-    def generate_trials(self, batch_size, trials_per_block, reversal_interval,
-                 stim_orders=None, rwd_orders=None):
+    def generate_trials(self, batch_size, trials_per_block, reversal_interval, reward_schedule,
+                        stim_orders=None, rwd_orders=None, block_type=None):
         
         all_trials_info = {k: [] for k in [
             'stim_configs',
@@ -35,8 +34,8 @@ class WhatAndWhereTask():
             'targets'
         ]}
         for sess_idx in range(batch_size):
-            curr_sess_trials_info = self._generate_single_trial(trials_per_block, reversal_interval, 
-                                                                stim_orders, rwd_orders)
+            curr_sess_trials_info = self._generate_single_trial(trials_per_block, reversal_interval, reward_schedule,
+                                                                stim_orders, rwd_orders, block_type)
             for k in all_trials_info.keys():
                 all_trials_info[k].append(curr_sess_trials_info[k])
 
@@ -45,10 +44,11 @@ class WhatAndWhereTask():
 
         return all_trials_info
     
-    def _generate_single_trial(self, trials_per_block, reversal_interval, 
-                               stim_orders=None, rwd_orders=None):
-        '''sample block type'''
-        block_type = np.random.randint(2)
+    def _generate_single_trial(self, trials_per_block, reversal_interval, reward_schedule,
+                               stim_orders=None, rwd_orders=None, block_type=None):
+        '''sample block type if none is provided'''
+        if block_type is None:
+            block_type = np.random.randint(2)            
 
         '''sample stim configurations'''
         # (n_trials, )
@@ -70,50 +70,50 @@ class WhatAndWhereTask():
         reversal_point = np.random.randint(reversal_interval[0]-1, reversal_interval[1])
         reward_probs = np.empty((trials_per_block, 2))*np.nan
         if block_type==0:
-            reward_probs[:reversal_point, initial_better_option] = self.reward_schedule[0]
-            reward_probs[:reversal_point, 1-initial_better_option] = self.reward_schedule[1]
-            reward_probs[reversal_point:, initial_better_option] = self.reward_schedule[1]
-            reward_probs[reversal_point:, 1-initial_better_option] = self.reward_schedule[0]
+            reward_probs[:reversal_point, initial_better_option] = reward_schedule[0]
+            reward_probs[:reversal_point, 1-initial_better_option] = reward_schedule[1]
+            reward_probs[reversal_point:, initial_better_option] = reward_schedule[1]
+            reward_probs[reversal_point:, 1-initial_better_option] = reward_schedule[0]
         elif block_type==1:
             for trial_idx in range(trials_per_block):
                 if trial_idx<reversal_point:
                     if stim_configs[trial_idx]==initial_better_option:
-                        reward_probs[trial_idx, 0] = self.reward_schedule[0] 
-                        reward_probs[trial_idx, 1] = self.reward_schedule[1]
+                        reward_probs[trial_idx, 0] = reward_schedule[0] 
+                        reward_probs[trial_idx, 1] = reward_schedule[1]
                     else:
-                        reward_probs[trial_idx, 0] = self.reward_schedule[1] 
-                        reward_probs[trial_idx, 1] = self.reward_schedule[0]
+                        reward_probs[trial_idx, 0] = reward_schedule[1] 
+                        reward_probs[trial_idx, 1] = reward_schedule[0]
                 else:
                     if stim_configs[trial_idx]==initial_better_option:
-                        reward_probs[trial_idx, 0] = self.reward_schedule[1] 
-                        reward_probs[trial_idx, 1] = self.reward_schedule[0]
+                        reward_probs[trial_idx, 0] = reward_schedule[1] 
+                        reward_probs[trial_idx, 1] = reward_schedule[0]
                     else:
-                        reward_probs[trial_idx, 0] = self.reward_schedule[0] 
-                        reward_probs[trial_idx, 1] = self.reward_schedule[1]                    
+                        reward_probs[trial_idx, 0] = reward_schedule[0] 
+                        reward_probs[trial_idx, 1] = reward_schedule[1]                    
         else:
             raise ValueError
         
         '''sample rewards'''
         rewards = np.empty_like(reward_probs)*np.nan
 
-        pre_rev_num_rewards_high = int(np.round(self.reward_schedule[0]*reversal_point))
-        rewards[:reversal_point][np.isclose(reward_probs[:reversal_point], self.reward_schedule[0])] = \
+        pre_rev_num_rewards_high = int(np.round(reward_schedule[0]*reversal_point))
+        rewards[:reversal_point][np.isclose(reward_probs[:reversal_point], reward_schedule[0])] = \
             np.random.permutation(np.concatenate([
                 np.ones(pre_rev_num_rewards_high), np.zeros(reversal_point-pre_rev_num_rewards_high)
             ]))
-        pre_rev_num_rewards_low = int(np.round(self.reward_schedule[1]*reversal_point))
-        rewards[:reversal_point][np.isclose(reward_probs[:reversal_point], self.reward_schedule[1])] = \
+        pre_rev_num_rewards_low = int(np.round(reward_schedule[1]*reversal_point))
+        rewards[:reversal_point][np.isclose(reward_probs[:reversal_point], reward_schedule[1])] = \
             np.random.permutation(np.concatenate([
                 np.ones(pre_rev_num_rewards_low), np.zeros(reversal_point-pre_rev_num_rewards_low)
             ]))
         
-        post_rev_num_rewards_high = int(np.round(self.reward_schedule[0]*(trials_per_block-reversal_point)))
-        rewards[reversal_point:][np.isclose(reward_probs[reversal_point:], self.reward_schedule[0])] = \
+        post_rev_num_rewards_high = int(np.round(reward_schedule[0]*(trials_per_block-reversal_point)))
+        rewards[reversal_point:][np.isclose(reward_probs[reversal_point:], reward_schedule[0])] = \
             np.random.permutation(np.concatenate([
                 np.ones(post_rev_num_rewards_high), np.zeros(trials_per_block-reversal_point-post_rev_num_rewards_high)
             ]))
-        post_rev_num_rewards_low = int(np.round(self.reward_schedule[1]*(trials_per_block-reversal_point)))
-        rewards[reversal_point:][np.isclose(reward_probs[reversal_point:], self.reward_schedule[1])] = \
+        post_rev_num_rewards_low = int(np.round(reward_schedule[1]*(trials_per_block-reversal_point)))
+        rewards[reversal_point:][np.isclose(reward_probs[reversal_point:], reward_schedule[1])] = \
             np.random.permutation(np.concatenate([
                 np.ones(post_rev_num_rewards_low), np.zeros(trials_per_block-reversal_point-post_rev_num_rewards_low)
             ]))

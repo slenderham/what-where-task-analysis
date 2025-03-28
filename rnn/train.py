@@ -28,7 +28,8 @@ def train(model, iters):
             batch_size = args.batch_size,
             trials_per_block = args.trials_per_block, 
             reversal_interval = [args.trials_per_block//2-args.reversal_interval_range//2, 
-                                 args.trials_per_block//2+args.reversal_interval_range//2,]
+                                 args.trials_per_block//2+args.reversal_interval_range//2,],
+            reward_schedule=[args.reward_probs_high, 1-args.reward_probs_high]
         ) 
         stim_inputs = trial_info['stim_inputs'].to(device, dtype=torch.float)
         rewards = trial_info['rewards'].to(device)
@@ -96,7 +97,7 @@ def train(model, iters):
             target_action = targets[i].flatten() # (batch_size, )
             loss += F.cross_entropy(output_action, target_action)
             total_loss[1] += F.cross_entropy(output_action.detach(), target_action).detach().item()/len(stim_inputs)
-            total_acc[1] += (torch.argmax(output_action, -1)==target_action).float().item()/len(stim_inputs)
+            total_acc[1] += (action==target_action).float().item()/len(stim_inputs)
 
             # regularize firing rates
             loss += args.l2r*hs.pow(2).mean()/4  # + args.l1r*hs.abs().mean()
@@ -168,7 +169,8 @@ def eval(model, epoch):
                 batch_size = args.batch_size,
                 trials_per_block = args.trials_per_test_block, 
                 reversal_interval = [args.trials_per_test_block//2-args.test_reversal_interval_range//2, 
-                                    args.trials_per_test_block//2+args.test_reversal_interval_range//2,]
+                                    args.trials_per_test_block//2+args.test_reversal_interval_range//2,],
+                reward_schedule=[args.reward_probs_high, 1-args.reward_probs_high],
             ) 
             stim_inputs = trial_info['stim_inputs'].to(device, dtype=torch.float)
             rewards = trial_info['rewards'].to(device)
@@ -303,8 +305,7 @@ if __name__ == "__main__":
         device = torch.device('cuda' if args.cuda else 'cpu')
 
     log_interval = 50
-    what_where_task = WhatAndWhereTask(args.dt, args.stim_dims,
-                                       [args.reward_probs_high, 1-args.reward_probs_high])
+    what_where_task = WhatAndWhereTask(args.dt, args.stim_dims)
 
     input_config = {
         'fixation': (1, [0]),
