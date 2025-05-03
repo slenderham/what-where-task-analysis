@@ -24,7 +24,7 @@ class WhatAndWhereTask():
         self.stim_dims = stim_dims
 
     def generate_trials(self, batch_size, trials_per_block, reversal_interval, reward_schedule,
-                        stim_orders=None, rwd_orders=None, block_type=None):
+                        stim_orders=None, block_type=None):
         
         all_trials_info = {k: [] for k in [
             'stim_configs',
@@ -35,7 +35,7 @@ class WhatAndWhereTask():
         ]}
         for sess_idx in range(batch_size):
             curr_sess_trials_info = self._generate_single_trial(trials_per_block, reversal_interval, reward_schedule,
-                                                                stim_orders, rwd_orders, block_type)
+                                                                stim_orders, block_type)
             for k in all_trials_info.keys():
                 all_trials_info[k].append(curr_sess_trials_info[k])
 
@@ -45,7 +45,7 @@ class WhatAndWhereTask():
         return all_trials_info
     
     def _generate_single_trial(self, trials_per_block, reversal_interval, reward_schedule,
-                               stim_orders=None, rwd_orders=None, block_type=None):
+                               stim_orders=None, block_type=None):
         '''sample block type if none is provided'''
         if block_type is None:
             block_type = np.random.randint(2)            
@@ -53,9 +53,12 @@ class WhatAndWhereTask():
         '''sample stim configurations'''
         # (n_trials, )
         # the same as stim on the left
-        stim_configs = np.random.permutation(np.repeat(
-            np.array([0, 1]), repeats=trials_per_block//2
-        ))
+        if stim_orders is None:
+            stim_configs = np.random.permutation(np.repeat(
+                np.array([0, 1]), repeats=trials_per_block//2
+            ))
+        else:
+            stim_configs = stim_orders
 
         '''sample stim input to network'''
         img_reps = np.random.randn(self.stim_dims)

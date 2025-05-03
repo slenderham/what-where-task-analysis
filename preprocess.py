@@ -26,7 +26,7 @@ if __name__ == '__main__':
     aligned_events = ["StimOnset"]
 
     # root_dir = '/Users/f005d7d/Documents/Attn_MdPRL/what-where-task/'
-    root_dir = '/dartfs-hpc/scratch/f005d7d/what_where_analysis/'
+    root_dir = '/dartfs/rc/lab/S/SoltaniA/f005d7d/what_where_analysis/'
 
     bhv_path = os.path.join(root_dir, 'Behavior/')
     processed_path = os.path.join(root_dir, 'processed/')
@@ -34,7 +34,7 @@ if __name__ == '__main__':
 
     binsize = 0.01
     # gauss_SD = 0.02/binsize
-    win_size = int(0.05/binsize)
+    win_size = int(0.01/binsize)
     stride = int(0.01/binsize)
 
     all_sess_regression_info = {

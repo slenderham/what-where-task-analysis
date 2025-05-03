@@ -56,3 +56,5 @@ src/testTestingRootWkspc/coverageWorkspace/.coverage
 
 rnn/exp
 rnn/wandb
+
+slurm*
