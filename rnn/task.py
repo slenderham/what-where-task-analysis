@@ -23,8 +23,12 @@ class WhatAndWhereTask():
 
         self.stim_dims = stim_dims
 
-    def generate_trials(self, batch_size, trials_per_block, reversal_interval, reward_schedule,
+    def generate_trials(self, batch_size, trials_per_block, reversal_interval, reward_schedule=None,
                         stim_orders=None, block_type=None):
+        
+        if reward_schedule is None:
+            train_reward_prob_high = np.random.rand()*0.3+0.6 # uniform [0.6, 0.9]
+            reward_schedule = [train_reward_prob_high, 1-train_reward_prob_high]
         
         all_trials_info = {k: [] for k in [
             'stim_configs',
@@ -73,11 +77,13 @@ class WhatAndWhereTask():
         reversal_point = np.random.randint(reversal_interval[0]-1, reversal_interval[1])
         reward_probs = np.empty((trials_per_block, 2))*np.nan
         if block_type==0:
+            # for where blocks, the reward probabilities are tied to the location
             reward_probs[:reversal_point, initial_better_option] = reward_schedule[0]
             reward_probs[:reversal_point, 1-initial_better_option] = reward_schedule[1]
             reward_probs[reversal_point:, initial_better_option] = reward_schedule[1]
             reward_probs[reversal_point:, 1-initial_better_option] = reward_schedule[0]
         elif block_type==1:
+            # for what blocks, the reward probabilities are tied to the stimulus
             for trial_idx in range(trials_per_block):
                 if trial_idx<reversal_point:
                     if stim_configs[trial_idx]==initial_better_option:
@@ -99,6 +105,7 @@ class WhatAndWhereTask():
         '''sample rewards'''
         rewards = np.empty_like(reward_probs)*np.nan
 
+        # pre-reversal rewards
         pre_rev_num_rewards_high = int(np.round(reward_schedule[0]*reversal_point))
         rewards[:reversal_point][np.isclose(reward_probs[:reversal_point], reward_schedule[0])] = \
             np.random.permutation(np.concatenate([
@@ -110,6 +117,7 @@ class WhatAndWhereTask():
                 np.ones(pre_rev_num_rewards_low), np.zeros(reversal_point-pre_rev_num_rewards_low)
             ]))
         
+        # post-reversal rewards
         post_rev_num_rewards_high = int(np.round(reward_schedule[0]*(trials_per_block-reversal_point)))
         rewards[reversal_point:][np.isclose(reward_probs[reversal_point:], reward_schedule[0])] = \
             np.random.permutation(np.concatenate([
@@ -130,7 +138,7 @@ class WhatAndWhereTask():
         }
 
 if __name__=='__main__':
-    task = WhatAndWhereTask(0.02, 5, [0.7, 0.3])
+    task = WhatAndWhereTask(0.02, 2)
 
     all_trials_info = task.generate_trials(1, 40, [15, 25])
 

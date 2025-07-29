@@ -24,13 +24,12 @@ def train(model, iters):
     total_acc = [0, 0]
     total_loss = [0, 0]
     for batch_idx in range(iters):
-        train_reward_prob_high = np.random.rand()*0.3+0.6 # uniform [0.6, 0.9]
+        
         trial_info = what_where_task.generate_trials(
             batch_size = args.batch_size,
             trials_per_block = args.trials_per_block, 
             reversal_interval = [args.trials_per_block//2-args.reversal_interval_range//2, 
                                  args.trials_per_block//2+args.reversal_interval_range//2,],
-            reward_schedule=[train_reward_prob_high, 1-train_reward_prob_high]
         ) 
         stim_inputs = trial_info['stim_inputs'].to(device, dtype=torch.float)
         rewards = trial_info['rewards'].to(device)
@@ -118,18 +117,18 @@ def train(model, iters):
 
             loss += args.l2r*hs.pow(2).mean()/4 # + args.l1r*hs.abs().mean()
 
+            # regularize weight
+            loss += args.l2w*w_hidden.pow(2).sum(dim=(-2, -1)).mean()
+            if args.num_areas>1:
+                loss += args.l1w*(model.mask_rec_inter*w_hidden).abs().sum(dim=(-2,-1)).mean()
+
         loss /= len(stim_inputs)
         
         # add weight decay for static weights
-        loss += args.l2w*(model.rnn.h2h.effective_weight().pow(2).sum())
-        loss += args.l2w*(model.plasticity.effective_lr().pow(2).sum())
         for input_w in model.rnn.x2h.values():
             loss += args.l2w*(input_w.effective_weight().pow(2).sum())
         for output_w in model.h2o.values():
             loss += args.l2w*(output_w.effective_weight().pow(2).sum())
-        if args.num_areas>1:
-            loss += args.l1w*(model.mask_rec_inter*model.rnn.h2h.effective_weight()).abs().sum()
-            loss += args.l1w*(model.mask_rec_inter*model.plasticity.effective_lr()).abs().sum()
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.max_norm)
@@ -138,7 +137,6 @@ def train(model, iters):
         # clamp weight values to 
         with torch.no_grad():
             model.rnn.h2h.weight.data.clamp_(-model.plasticity.weight_bound, model.plasticity.weight_bound)
-            model.h2da.data.clamp_(-1, 1)
             
         if (batch_idx+1) % log_interval == 0:
             if torch.isnan(loss):
@@ -164,10 +162,10 @@ def train(model, iters):
 def eval(model, epoch):
     model.eval()
     with torch.no_grad():
-        losses_mean_by_block_type = []
-        losses_std_by_block_type = []
+        losses_means_by_block_type = []
+        losses_stds_by_block_type = []
         for test_block_type in range(2):
-            losses = []
+            curr_block_losses = []
             for batch_idx in range(args.eval_samples):
                 trial_info = what_where_task.generate_trials(
                     batch_size = args.batch_size,
@@ -190,7 +188,7 @@ def eval(model, epoch):
                     all_x = {
                         'fixation': torch.zeros(args.batch_size, 1, device=device),
                         'stimulus': torch.zeros_like(stim_inputs[i]),
-                        'reward': torch.zeros(args.batch_size, 2, device=device), # 2+2 for chosen and unchosen rewards
+                        'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
                         'action': torch.zeros(args.batch_size, 2, device=device), # left/right
                     }
 
@@ -203,7 +201,7 @@ def eval(model, epoch):
                     all_x = {
                         'fixation': torch.ones(args.batch_size, 1, device=device),
                         'stimulus': torch.zeros_like(stim_inputs[i]),
-                        'reward': torch.zeros(args.batch_size, 2, device=device), # 2+2 for chosen and unchosen rewards
+                        'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
                         'action': torch.zeros(args.batch_size, 2, device=device), # left/right
                     }
 
@@ -216,7 +214,7 @@ def eval(model, epoch):
                     all_x = {
                         'fixation': torch.zeros(args.batch_size, 1, device=device),
                         'stimulus': stim_inputs[i],
-                        'reward': torch.zeros(args.batch_size, 2, device=device), # 2+2 for chosen and unchosen rewards
+                        'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
                         'action': torch.zeros(args.batch_size, 2, device=device), # left/right
                     }
 
@@ -228,14 +226,14 @@ def eval(model, epoch):
                     ''' use output to calculate action, reward, and record loss function '''
                     action = torch.multinomial(output['action'][...,:2].softmax(-1), num_samples=1).squeeze(-1) # (batch size, )
                     rwd_ch = rewards[i][range(args.batch_size),action] # (batch size, )
-                    loss.append((action==targets[i]).float())
+                    loss.append((action==targets[i]).float()) # (batch size, )
 
 
                     '''fourth phase, give stimuli and choice, and update weights'''
                     all_x = {
                         'fixation': torch.zeros(args.batch_size, 1, device=device),
                         'stimulus': stim_inputs[i],
-                        'reward': torch.eye(2, device=device)[None][range(args.batch_size), rwd_ch], # 2+2 for chosen and unchosen rewards
+                        'reward': torch.eye(2, device=device)[None][range(args.batch_size), rwd_ch], # reward/reward
                         'action': torch.eye(2, device=device)[None][range(args.batch_size), action], # left/right
                     }
 
@@ -244,14 +242,18 @@ def eval(model, epoch):
                                                     hidden=hidden, w_hidden=w_hidden, 
                                                     update_w=True)
         
-                loss = torch.stack(loss, dim=0)
-                losses.append(loss)
-            losses_means = torch.cat(losses, dim=1).mean(1) # loss per trial
-            losses_stds = torch.cat(losses, dim=1).std(1) # loss per trial
-        print('====> Epoch {} Eval Loss: {:.4f}'.format(epoch+1, losses_means.mean()))
-        wandb.log({'Eval loss': losses_means.mean()})
-        return losses_means, losses_stds
-
+                loss = torch.stack(loss, dim=0) # shape: (trials_per_test_block, batch_size)
+                curr_block_losses.append(loss) # (eval_samples, trials_per_test_block, batch_size)
+            # Save all losses for this block type
+            losses_means_by_block_type.append(torch.stack(curr_block_losses, dim=0).mean(dim=(0,2))) # (trials_per_test_block)
+            losses_stds_by_block_type.append(torch.stack(curr_block_losses, dim=0).std(dim=(0,2))) # (trials_per_test_block)
+        print('====> Epoch {} Eval Loss Where Block: {:.3f}, What Block: {:.3f}'.format(
+            epoch+1, losses_means_by_block_type[0].mean(), losses_means_by_block_type[1].mean()))
+        wandb.log({
+            'Eval loss where block': losses_means_by_block_type[0].mean(),
+            'Eval loss what block': losses_means_by_block_type[1].mean()
+        })
+        return torch.stack(losses_means_by_block_type, dim=0), torch.stack(losses_stds_by_block_type, dim=0)
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
@@ -336,7 +338,7 @@ if __name__ == "__main__":
                    'inter_regional_sparsity': (1, 1), 'inter_regional_gain': (1, 1)}
     
     model = HierarchicalPlasticRNN(**model_specs).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, eps=1e-6)
     print(model)
     for n, p in model.named_parameters():
         print(n, p.numel())

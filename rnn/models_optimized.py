@@ -275,11 +275,9 @@ class HierarchicalPlasticRNN(nn.Module):
 
         self.input_config = input_config
         # input configs contain entries of type {'name': (input_size, destination area)}
-        # should include 'loc_invariant' -> area 1, 'loc_selective' -> area 3, 'reward' -> all areas, 'action' -> area 4
         self.hidden_size = hidden_size
         self.output_config = output_config
         # input configs contain entries of type {'name': (output_size, source area)}
-        # should include 'action' -> area 4, 'object' -> area 2
         self.num_areas = num_areas
         self.e_size = int(e_prop * hidden_size)
         self.i_size = hidden_size-self.e_size
@@ -288,7 +286,6 @@ class HierarchicalPlasticRNN(nn.Module):
 
         # specify connectivity
         rec_mask_weight = torch.eye(self.num_areas) + torch.diag(torch.ones(self.num_areas-1), 1) + torch.diag(torch.ones(self.num_areas-1), -1)
-        # rec_mask_plas = rec_mask_weight
         rec_mask_plas = rec_mask_weight
 
         self.conn_masks = _get_connectivity_mask_rec(rec_mask=rec_mask_weight, num_areas=self.num_areas,
@@ -332,10 +329,6 @@ class HierarchicalPlasticRNN(nn.Module):
                             conn_mask = _get_connectivity_mask_out(curr_out_mask, output_size, self.e_size, self.i_size))
         self.h2o = nn.ModuleDict(self.h2o)
 
-        # dopamine modulation weights
-        # self.h2da = nn.Parameter(torch.ones(1,4))
-        self.h2da = torch.FloatTensor([[1.0, 1.0]])
-
         # init state
         if train_init_state:
             self.h0 = nn.Parameter(torch.zeros(1, hidden_size*self.num_areas))
@@ -375,7 +368,7 @@ class HierarchicalPlasticRNN(nn.Module):
 
         # if dopamine is not None, update weight
         if update_w is True:
-            DAs = (torch.abs(self.h2da)*torch.tensor([[-1, 1]])*x['reward']).sum(-1)
+            DAs = (torch.tensor([[-1, 1]])*x['reward']).sum(-1)
             w_hidden = self.plasticity(w_hidden, self.rnn.h2h.pos_func(self.rnn.h2h.weight).unsqueeze(0), DAs, output, output)
         
         if save_all_states:
