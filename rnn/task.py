@@ -11,8 +11,8 @@ class WhatAndWhereTask():
         self.times = {
             'ITI': 0.4,
             'fixation_time': 0.4,
-            'stim_time': 0.8,
-            'choice_reward_time': 0.6
+            'stim_time': 0.7,
+            'choice_reward_time': 0.5
         }
         self.dt = dt
 
@@ -35,7 +35,9 @@ class WhatAndWhereTask():
             'stim_inputs',
             'rewards',
             'reward_probs',
-            'targets'
+            'block_types',
+            'action_targets',
+            'stimulus_targets'
         ]}
         for sess_idx in range(batch_size):
             curr_sess_trials_info = self._generate_single_trial(trials_per_block, reversal_interval, reward_schedule,
@@ -52,7 +54,7 @@ class WhatAndWhereTask():
                                stim_orders=None, block_type=None):
         '''sample block type if none is provided'''
         if block_type is None:
-            block_type = np.random.randint(2)            
+            block_type = np.random.choice([0, 1], p=[1/3, 2/3])
 
         '''sample stim configurations'''
         # (n_trials, )
@@ -101,6 +103,12 @@ class WhatAndWhereTask():
                         reward_probs[trial_idx, 1] = reward_schedule[1]                    
         else:
             raise ValueError
+
+        '''get action targets with the higher reward probability'''
+        action_targets = np.argmax(reward_probs, -1)
+
+        '''get stimulus targets'''
+        stimulus_targets = img_reps[action_targets]
         
         '''sample rewards'''
         rewards = np.empty_like(reward_probs)*np.nan
@@ -130,11 +138,13 @@ class WhatAndWhereTask():
             ]))
         
         return {
-            'stim_configs': stim_configs,
-            'stim_inputs': stim_inputs,
-            'rewards': rewards.astype(int),
-            'reward_probs': reward_probs,
-            'targets': np.argmax(reward_probs, -1)
+            'stim_configs': torch.from_numpy(stim_configs).long(),
+            'stim_inputs': torch.from_numpy(stim_inputs).float(),
+            'rewards': torch.from_numpy(rewards).long(),
+            'reward_probs': torch.from_numpy(reward_probs).float(),
+            'block_types': torch.from_numpy(block_type.astype(int)*np.ones_like(action_targets)).long(),
+            'action_targets': torch.from_numpy(action_targets).long(),
+            'stimulus_targets': torch.from_numpy(stimulus_targets).float()
         }
 
 if __name__=='__main__':
@@ -148,4 +158,5 @@ if __name__=='__main__':
     print(np.unique(all_trials_info['stim_configs'], return_counts=True))
     print(np.unique(all_trials_info['rewards'], return_counts=True))
     print(np.unique(all_trials_info['reward_probs'], return_counts=True))
-    print(np.unique(all_trials_info['targets'], return_counts=True))
+    print(np.unique(all_trials_info['action_targets'], return_counts=True))
+    print(np.unique(all_trials_info['stimulus_targets'], return_counts=True))

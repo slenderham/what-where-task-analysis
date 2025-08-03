@@ -173,8 +173,8 @@ class PlasticSynapse(nn.Module):
         self.input_size = input_size
         self.output_size = output_size
         self.weight_bound = weight_bound
-        self.lb = 0
-        self.ub = weight_bound
+        self.lb = torch.zeros(self.output_size, self.input_size)
+        self.ub = torch.ones(self.output_size, self.input_size)*weight_bound
         
         self.dt_w = dt_w
         self.tau_w = tau_w
@@ -202,7 +202,7 @@ class PlasticSynapse(nn.Module):
         '''
         new_w = baseline*(self.alpha_w) + w*(1-self.alpha_w) \
             + R*self.effective_lr()*(torch.bmm(post.unsqueeze(2), pre.unsqueeze(1))+self._sigma_w*torch.randn_like(w))
-        new_w = torch.clamp(new_w, self.lb, self.ub)
+        new_w = torch.clamp(new_w, self.lb, baseline*(self.ub+1))
         return new_w
     
 
