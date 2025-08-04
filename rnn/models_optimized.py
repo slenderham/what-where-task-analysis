@@ -202,7 +202,7 @@ class PlasticSynapse(nn.Module):
         '''
         new_w = baseline*(self.alpha_w) + w*(1-self.alpha_w) \
             + R*self.effective_lr()*(torch.bmm(post.unsqueeze(2), pre.unsqueeze(1))+self._sigma_w*torch.randn_like(w))
-        new_w = torch.clamp(new_w, self.lb, baseline*(self.ub+1))
+        new_w = torch.clamp(new_w, self.lb, self.ub)
         return new_w
     
 
@@ -325,7 +325,7 @@ class HierarchicalPlasticRNN(nn.Module):
             curr_out_mask = torch.zeros(1, self.num_areas)
             curr_out_mask[:,output_source] = 1
             self.h2o[output_name] = EILinear(self.hidden_size*self.num_areas, output_size, remove_diag=False, pos_function='abs',
-                            e_prop=1, zero_cols_prop=0, bias=False, init_gain=1,
+                            e_prop=1, zero_cols_prop=0, bias=True, init_gain=1,
                             conn_mask = _get_connectivity_mask_out(curr_out_mask, output_size, self.e_size, self.i_size))
         self.h2o = nn.ModuleDict(self.h2o)
 

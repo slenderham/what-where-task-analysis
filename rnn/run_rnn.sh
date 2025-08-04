@@ -11,9 +11,9 @@ python train.py --cuda\
         --save_checkpoint\
         --iters 1000\
         --epochs 25\
-        --hidden_size 80\
+        --hidden_size 120\
         --num_areas 1\
-        --l2r 1e-1\
+        --l2r 1e-2\
         --l2w 1e-5\
         --init_spectral 1.0\
         --balance_ei\

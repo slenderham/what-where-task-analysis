@@ -10,9 +10,9 @@ class WhatAndWhereTask():
 
         self.times = {
             'ITI': 0.4,
-            'fixation_time': 0.4,
-            'stim_time': 0.7,
-            'choice_reward_time': 0.5
+            'fixation_time': 0.6,
+            'stim_time': 0.8,
+            'choice_reward_time': 0.6
         }
         self.dt = dt
 
@@ -54,7 +54,9 @@ class WhatAndWhereTask():
                                stim_orders=None, block_type=None):
         '''sample block type if none is provided'''
         if block_type is None:
-            block_type = np.random.choice([0, 1], p=[1/3, 2/3])
+            block_type = np.random.choice([0, 1], p=[0.5, 0.5])
+        else:
+            block_type = np.array([block_type])
 
         '''sample stim configurations'''
         # (n_trials, )
@@ -108,7 +110,7 @@ class WhatAndWhereTask():
         action_targets = np.argmax(reward_probs, -1)
 
         '''get stimulus targets'''
-        stimulus_targets = img_reps[action_targets]
+        stimulus_targets = img_reps[action_targets] # (n_trials, 2)
         
         '''sample rewards'''
         rewards = np.empty_like(reward_probs)*np.nan
