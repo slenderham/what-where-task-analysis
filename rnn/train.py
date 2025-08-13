@@ -22,7 +22,7 @@ def train(model, iters):
     optimizer.zero_grad()
     pbar = tqdm(total=iters)
     # to save the accuracy of the action and block type in preparation and choice
-    total_acc = {'fixation_acc': 0, 'action_acc': 0, 'block_type_prep_acc': 0, 'block_type_acc': 0}
+    total_acc = {'action_acc': 0, 'block_type_prep_acc': 0, 'block_type_acc': 0}
     # to save the loss of fixation, preparatory action, preparatory stimulus, preparatory block type, 
     # choice action, choice stimulus, and choice block type
     total_loss = {'fixation': 0, 'block_type_prep': 0, 'action': 0, 'block_type': 0}
@@ -73,21 +73,24 @@ def train(model, iters):
                                             update_w=False)
             
             # decode action to be fixation
-            output_action = output['action'].flatten(end_dim=-2) # (batch_size, 3)
-            fixation_target = torch.LongTensor([2]*args.batch_size).to(device)
-            loss += F.cross_entropy(output_action, fixation_target)
+            output_action = output['action'].flatten(end_dim=-2) # (batch_size, 2)
+            # fixation_target = torch.LongTensor([2]*args.batch_size).to(device)
+            # loss += F.cross_entropy(output_action, fixation_target)
+            loss += (output_action[...,0]-output_action[...,1]).pow(2).mean()
 
             # decode block type
             output_block_type = output['block_type'].flatten(end_dim=-2) # (batch_size, 2)
             target_block_type = block_type_target[i].flatten() # (batch_size)
-            loss += F.cross_entropy(output_block_type, target_block_type)
+            loss += F.cross_entropy(output_block_type, target_block_type, weight=0.5/torch.tensor(what_where_task.block_type_probs))
 
             # save the fixation loss
-            total_loss['fixation'] += F.cross_entropy(output_action.detach(), fixation_target).detach().item()/len(stim_inputs)
-            total_acc['fixation_acc'] += (output_action.argmax(dim=-1)==fixation_target).float().item()/len(stim_inputs)
+            # total_loss['fixation'] += F.cross_entropy(output_action.detach(), fixation_target).detach().item()/len(stim_inputs)
+            total_loss['fixation'] += (output_action[...,0]-output_action[...,1]).pow(2).mean()/len(stim_inputs)
+            # total_acc['fixation_acc'] += (output_action.argmax(dim=-1)==fixation_target).float().item()/len(stim_inputs)
 
             # save the preparatory block type loss
-            total_loss['block_type_prep'] += F.cross_entropy(output_block_type.detach(), target_block_type).detach().item()/len(stim_inputs)
+            total_loss['block_type_prep'] += F.cross_entropy(output_block_type.detach(), target_block_type, 
+                                                             weight=0.5/torch.tensor(what_where_task.block_type_probs)).detach().item()/len(stim_inputs)
             total_acc['block_type_prep_acc'] += (output_block_type.argmax(dim=-1)==target_block_type).float().item()/len(stim_inputs)
 
             # regularize firing rate
@@ -116,12 +119,13 @@ def train(model, iters):
 
             output_block_type = output['block_type'].flatten(end_dim=-2) # (batch_size, 2)
             target_block_type = block_type_target[i].flatten() # (batch_size, )
-            loss += F.cross_entropy(output_block_type, target_block_type)
+            loss += F.cross_entropy(output_block_type, target_block_type, weight=0.5/torch.tensor(what_where_task.block_type_probs))
             
             total_loss['action'] += F.cross_entropy(output_action.detach(), target_action).detach().item()/len(stim_inputs)
             total_acc['action_acc'] += (action==target_action).float().item()/len(stim_inputs)
 
-            total_loss['block_type'] += F.cross_entropy(output_block_type.detach(), target_block_type).detach().item()/len(stim_inputs)
+            total_loss['block_type'] += F.cross_entropy(output_block_type.detach(), target_block_type, 
+                                                        weight=0.5/torch.tensor(what_where_task.block_type_probs)).detach().item()/len(stim_inputs)
             total_acc['block_type_acc'] += (output_block_type.argmax(dim=-1)==target_block_type).float().item()/len(stim_inputs)
 
             # regularize firing rates
@@ -363,7 +367,7 @@ if __name__ == "__main__":
                    'inter_regional_sparsity': (1, 1), 'inter_regional_gain': (1, 1)}
     
     model = HierarchicalPlasticRNN(**model_specs).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, eps=1e-5)
+    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     print(model)
     for n, p in model.named_parameters():
         print(n, p.numel())

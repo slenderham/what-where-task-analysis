@@ -58,3 +58,5 @@ rnn/exp
 rnn/wandb
 
 slurm*
+jupyter_notebook_*.txt
+jupyter_notebook_*.err

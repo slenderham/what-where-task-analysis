@@ -22,6 +22,7 @@ class WhatAndWhereTask():
         self.T_choice = int(self.times['choice_reward_time']/self.dt)
 
         self.stim_dims = stim_dims
+        self.block_type_probs = [1/3, 2/3]
 
     def generate_trials(self, batch_size, trials_per_block, reversal_interval, reward_schedule=None,
                         stim_orders=None, block_type=None):
@@ -54,13 +55,15 @@ class WhatAndWhereTask():
                                stim_orders=None, block_type=None):
         '''sample block type if none is provided'''
         if block_type is None:
-            block_type = np.random.choice([0, 1], p=[0.5, 0.5])
+            block_type = np.random.choice([0, 1], p=self.block_type_probs)
         else:
             block_type = np.array([block_type])
 
+        assert reward_schedule[0]>reward_schedule[1], 'reward_schedule[0] must be greater than reward_schedule[1]'
+
         '''sample stim configurations'''
         # (n_trials, )
-        # the same as stim on the left
+        # 0: [left 0, right 1]; 1: [left 1, right 0]
         if stim_orders is None:
             stim_configs = np.random.permutation(np.repeat(
                 np.array([0, 1]), repeats=trials_per_block//2
