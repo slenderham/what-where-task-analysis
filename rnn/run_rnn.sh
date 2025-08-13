@@ -14,7 +14,7 @@ python train.py --cuda\
         --hidden_size 80\
         --num_areas 1\
         --l2r 1e-1\
-        --l2w 1e-4\
+        --l2w 1e-5\
         --init_spectral 1.0\
         --balance_ei\
         --learning_rate 1e-3\

@@ -85,7 +85,7 @@ def train(model, iters):
 
             # save the fixation loss
             # total_loss['fixation'] += F.cross_entropy(output_action.detach(), fixation_target).detach().item()/len(stim_inputs)
-            total_loss['fixation'] += (output_action[...,0]-output_action[...,1]).pow(2).mean()/len(stim_inputs)
+            total_loss['fixation'] += (output_action[...,0]-output_action[...,1]).pow(2).mean().detach().item()/len(stim_inputs)
             # total_acc['fixation_acc'] += (output_action.argmax(dim=-1)==fixation_target).float().item()/len(stim_inputs)
 
             # save the preparatory block type loss
@@ -292,7 +292,7 @@ if __name__ == "__main__":
     parser.add_argument('--trials_per_block', type=int, default=80, help='Number of trials')
     parser.add_argument('--trials_per_test_block', type=int, default=80, help='Number of trials')
     parser.add_argument('--reward_probs_high', type=float, default=0.7, help='Reward probability of better option')
-    parser.add_argument('--reversal_interval_range', type=int, default=20, help='Range of reversal interval')
+    parser.add_argument('--reversal_interval_range', type=int, default=40, help='Range of reversal interval')
     parser.add_argument('--test_reversal_interval_range', type=int, default=20, help='Range of reversal interval')
     parser.add_argument('--e_prop', type=float, default=4/5, help='Proportion of E neurons')
     parser.add_argument('--batch_size', type=int, default=1, help='Batch size')
@@ -350,7 +350,7 @@ if __name__ == "__main__":
     # decode the action and stimulus to choose at the end of fixation and during choice using separate readouts
     # also decode the block type
     output_config = {
-        'action': (3, [0]), # left, right, fixation
+        'action': (2, [0]), # left, right
         'block_type': (2, [0]), # where or what block
     }
 
