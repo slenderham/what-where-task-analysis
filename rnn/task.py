@@ -22,7 +22,7 @@ class WhatAndWhereTask():
         self.T_choice = int(self.times['choice_reward_time']/self.dt)
 
         self.stim_dims = stim_dims
-        self.block_type_probs = [1/3, 2/3]
+        self.block_type_probs = [0.5, 0.5]
 
     def generate_trials(self, batch_size, trials_per_block, reversal_interval, reward_schedule=None,
                         stim_orders=None, block_type=None):
@@ -67,14 +67,14 @@ class WhatAndWhereTask():
         if stim_orders is None:
             stim_configs = np.random.permutation(np.repeat(
                 np.array([0, 1]), repeats=trials_per_block//2
-            ))
+            )) # (n_trials, )
         else:
             stim_configs = stim_orders
 
         '''sample stim input to network'''
         img_reps = np.random.randn(self.stim_dims)
         img_reps = img_reps/np.linalg.norm(img_reps)
-        img_reps = np.stack([1+img_reps, 1-img_reps], axis=0)
+        img_reps = np.stack([1+img_reps, 1-img_reps], axis=0) # (2, n_dims)
         stim_inputs = np.concatenate([
             img_reps[stim_configs], img_reps[1-stim_configs]
         ], axis=-1) # (n_trials, 2*n_dims)
@@ -113,7 +113,10 @@ class WhatAndWhereTask():
         action_targets = np.argmax(reward_probs, -1)
 
         '''get stimulus targets'''
-        stimulus_targets = img_reps[action_targets] # (n_trials, 2)
+        # if stimulus config is [0 1]/[1 0], action target is left/right, then stimulus target is img_reps[0]
+        # if stimulus config is [1 0]/[0 1], action target is left/right, then stimulus target is img_reps[1]
+        target_stim = (stim_configs!=action_targets)*1 # (n_trials, )
+        stimulus_targets = img_reps[target_stim] # (n_trials, 2)
         
         '''sample rewards'''
         rewards = np.empty_like(reward_probs)*np.nan

@@ -25,7 +25,7 @@ def train(model, iters):
     total_acc = {'action_acc': 0, 'block_type_prep_acc': 0, 'block_type_acc': 0}
     # to save the loss of fixation, preparatory action, preparatory stimulus, preparatory block type, 
     # choice action, choice stimulus, and choice block type
-    total_loss = {'fixation': 0, 'block_type_prep': 0, 'action': 0, 'block_type': 0}
+    total_loss = {'fixation': 0, 'block_type_prep': 0, 'action': 0, 'stimulus': 0, 'block_type': 0}
     for batch_idx in range(iters):
         trial_info = what_where_task.generate_trials(
             batch_size = args.batch_size,
@@ -37,6 +37,7 @@ def train(model, iters):
         rewards = trial_info['rewards'].to(device)
         action_targets = trial_info['action_targets'].to(device)
         block_type_target = trial_info['block_types'].to(device) # (batch_size, )
+        stimulus_targets = trial_info['stimulus_targets'].to(device) # (batch_size, 2)
         
         loss = 0
         hidden = None
@@ -120,6 +121,12 @@ def train(model, iters):
             output_block_type = output['block_type'].flatten(end_dim=-2) # (batch_size, 2)
             target_block_type = block_type_target[i].flatten() # (batch_size, )
             loss += F.cross_entropy(output_block_type, target_block_type, weight=0.5/torch.tensor(what_where_task.block_type_probs))
+
+            output_stimulus = output['stimulus'].flatten() # (batch_size, 2)
+            target_stimulus = stimulus_targets[i].flatten() # (batch_size, 2)
+            loss += F.mse_loss(output_stimulus, target_stimulus)
+
+            total_loss['stimulus'] += F.mse_loss(output_stimulus.detach(), target_stimulus).detach().item()/len(stim_inputs)
             
             total_loss['action'] += F.cross_entropy(output_action.detach(), target_action).detach().item()/len(stim_inputs)
             total_acc['action_acc'] += (action==target_action).float().item()/len(stim_inputs)
@@ -173,7 +180,7 @@ def train(model, iters):
             pbar.set_description('Iteration {} Loss: {:.3f}, {:.3f}, {:.3f}, {:.3f}; Acc: {:.3f}, {:.3f},'.format(
                 batch_idx+1, 
                 total_loss['fixation']/(batch_idx+1), total_loss['action']/(batch_idx+1), 
-                total_loss['block_type_prep']/(batch_idx+1), total_loss['block_type']/(batch_idx+1),
+                total_loss['stimulus']/(batch_idx+1), total_loss['block_type']/(batch_idx+1),
                 total_acc['action_acc']/(batch_idx+1), total_acc['block_type_acc']/(batch_idx+1)))
             # pbar.refresh()
             pbar.update(log_interval)
@@ -351,6 +358,7 @@ if __name__ == "__main__":
     # also decode the block type
     output_config = {
         'action': (2, [0]), # left, right
+        'stimulus': (args.stim_dims, [0]), # stimulus
         'block_type': (2, [0]), # where or what block
     }
 
