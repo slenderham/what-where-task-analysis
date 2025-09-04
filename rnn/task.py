@@ -12,17 +12,20 @@ class WhatAndWhereTask():
             'ITI': 0.4,
             'fixation_time': 0.6,
             'stim_time': 0.8,
-            'choice_reward_time': 0.6
+            'reward_time': 0.6
         }
         self.dt = dt
 
         self.T_ITI = int(self.times['ITI']/self.dt)
         self.T_fixation = int(self.times['fixation_time']/self.dt)
         self.T_stim = int(self.times['stim_time']/self.dt)
-        self.T_choice = int(self.times['choice_reward_time']/self.dt)
+        self.T_rwd = int(self.times['reward_time']/self.dt)
 
         self.stim_dims = stim_dims
-        self.block_type_probs = [0.5, 0.5]
+        self.block_type_probs = [0.4, 0.6]
+
+        self.low_output_target = 0.2
+        self.high_output_target = 1.0
 
     def generate_trials(self, batch_size, trials_per_block, reversal_interval, reward_schedule=None,
                         stim_orders=None, block_type=None):
@@ -73,8 +76,8 @@ class WhatAndWhereTask():
 
         '''sample stim input to network'''
         img_reps = np.random.randn(self.stim_dims)
-        img_reps = img_reps/np.linalg.norm(img_reps)
-        img_reps = np.stack([1+img_reps, 1-img_reps], axis=0) # (2, n_dims)
+        img_reps = img_reps/np.linalg.norm(img_reps) # normalize to unit length
+        img_reps = np.stack([1+img_reps, 1-img_reps], axis=0)/2 # (2, n_dims), add 1 to make the stimulus positive, divide by 2 to make the stimulus between 0 and 1
         stim_inputs = np.concatenate([
             img_reps[stim_configs], img_reps[1-stim_configs]
         ], axis=-1) # (n_trials, 2*n_dims)
@@ -110,12 +113,13 @@ class WhatAndWhereTask():
             raise ValueError
 
         '''get action targets with the higher reward probability'''
-        action_targets = np.argmax(reward_probs, -1)
+        action_targets_ind = np.argmax(reward_probs, -1) # (n_trials, )
+        action_targets = np.eye(2)[action_targets_ind]*(self.high_output_target-self.low_output_target)+self.low_output_target # (n_trials, 2)
 
         '''get stimulus targets'''
         # if stimulus config is [0 1]/[1 0], action target is left/right, then stimulus target is img_reps[0]
         # if stimulus config is [1 0]/[0 1], action target is left/right, then stimulus target is img_reps[1]
-        target_stim = (stim_configs!=action_targets)*1 # (n_trials, )
+        target_stim = (stim_configs!=action_targets_ind)*1 # (n_trials, )
         stimulus_targets = img_reps[target_stim] # (n_trials, 2)
         
         '''sample rewards'''
@@ -150,8 +154,8 @@ class WhatAndWhereTask():
             'stim_inputs': torch.from_numpy(stim_inputs).float(),
             'rewards': torch.from_numpy(rewards).long(),
             'reward_probs': torch.from_numpy(reward_probs).float(),
-            'block_types': torch.from_numpy(block_type.astype(int)*np.ones_like(action_targets)).long(),
-            'action_targets': torch.from_numpy(action_targets).long(),
+            'block_types': torch.from_numpy(block_type.astype(int)*np.ones((trials_per_block,))).long(),
+            'action_targets': torch.from_numpy(action_targets).float(),
             'stimulus_targets': torch.from_numpy(stimulus_targets).float()
         }
 

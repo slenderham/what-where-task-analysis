@@ -49,35 +49,34 @@ def train(model, iters):
                 'fixation': torch.zeros(args.batch_size, 1, device=device),
                 'stimulus': torch.zeros_like(stim_inputs[i]),
                 'reward': torch.zeros(args.batch_size, 2, device=device), # 2+2 for chosen and unchosen rewards
-                'action': torch.zeros(args.batch_size, 2, device=device), # left/right
+                # 'action': torch.zeros(args.batch_size, 2, device=device), # left/right
             }
 
             _, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_ITI, 
                                             neumann_order=args.neumann_order,
                                             hidden=hidden, w_hidden=w_hidden, 
-                                            update_w=False)
+                                            DAs=None)
             
             # regularize firing rate
             loss += args.l2r*hs.pow(2).mean()/4
 
-            ''' second phase, fixation at middle '''
+            ''' second phase, show fixation, require output to be fixation, decode block type '''
             all_x = {
                 'fixation': torch.ones(args.batch_size, 1, device=device),
                 'stimulus': torch.zeros_like(stim_inputs[i]),
                 'reward': torch.zeros(args.batch_size, 2, device=device), # 2+2 for chosen and unchosen rewards
-                'action': torch.zeros(args.batch_size, 2, device=device), # left/right
+                # 'action': torch.zeros(args.batch_size, 2, device=device), # left/right
             }
 
             output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_fixation, 
                                             neumann_order=args.neumann_order,
                                             hidden=hidden, w_hidden=w_hidden, 
-                                            update_w=False)
+                                            DAs=None)
             
             # decode action to be fixation
             output_action = output['action'].flatten(end_dim=-2) # (batch_size, 2)
             # fixation_target = torch.LongTensor([2]*args.batch_size).to(device)
-            # loss += F.cross_entropy(output_action, fixation_target)
-            loss += (output_action[...,0]-output_action[...,1]).pow(2).mean()
+            loss += F.mse_loss(output_action, what_where_task.low_output_target*torch.ones_like(output_action))
 
             # decode block type
             output_block_type = output['block_type'].flatten(end_dim=-2) # (batch_size, 2)
@@ -85,9 +84,7 @@ def train(model, iters):
             loss += F.cross_entropy(output_block_type, target_block_type, weight=0.5/torch.tensor(what_where_task.block_type_probs))
 
             # save the fixation loss
-            # total_loss['fixation'] += F.cross_entropy(output_action.detach(), fixation_target).detach().item()/len(stim_inputs)
-            total_loss['fixation'] += (output_action[...,0]-output_action[...,1]).pow(2).mean().detach().item()/len(stim_inputs)
-            # total_acc['fixation_acc'] += (output_action.argmax(dim=-1)==fixation_target).float().item()/len(stim_inputs)
+            total_loss['fixation'] += F.mse_loss(output_action.detach(), what_where_task.low_output_target*torch.ones_like(output_action)).detach().item()/len(stim_inputs)
 
             # save the preparatory block type loss
             total_loss['block_type_prep'] += F.cross_entropy(output_block_type.detach(), target_block_type, 
@@ -99,24 +96,24 @@ def train(model, iters):
 
             ''' third phase, give stimuli and no feedback '''
             all_x = {
-                'fixation': torch.zeros(args.batch_size, 1, device=device),
+                'fixation': torch.ones(args.batch_size, 1, device=device),
                 'stimulus': stim_inputs[i],
                 'reward': torch.zeros(args.batch_size, 2, device=device), # 2+2 for chosen and unchosen rewards
-                'action': torch.zeros(args.batch_size, 2, device=device), # left/right
+                # 'action': torch.zeros(args.batch_size, 2, device=device), # left/right
             }
 
             output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_stim, 
                                                 neumann_order=args.neumann_order,
                                                 hidden=hidden, w_hidden=w_hidden, 
-                                                update_w=False)
+                                                DAs=None)
 
             ''' use output to calculate action, reward, and record loss function '''
-            action = torch.multinomial(output['action'][...,:2].softmax(-1), num_samples=1).squeeze(-1) # (batch size, )
+            action = torch.argmax(output['action'], dim=-1) # (batch size, )
             rwd_ch = rewards[i][range(args.batch_size),action] # (batch size, )
             
-            output_action = output['action'].flatten(end_dim=-2) # (batch_size, 3)
-            target_action = action_targets[i].flatten() # (batch_size, )
-            loss += F.cross_entropy(output_action, target_action)
+            output_action = output['action'].flatten() # (batch_size, 2)
+            target_action = action_targets[i].flatten() # (batch_size, 2)
+            loss += F.mse_loss(output_action, target_action)
 
             output_block_type = output['block_type'].flatten(end_dim=-2) # (batch_size, 2)
             target_block_type = block_type_target[i].flatten() # (batch_size, )
@@ -128,8 +125,8 @@ def train(model, iters):
 
             total_loss['stimulus'] += F.mse_loss(output_stimulus.detach(), target_stimulus).detach().item()/len(stim_inputs)
             
-            total_loss['action'] += F.cross_entropy(output_action.detach(), target_action).detach().item()/len(stim_inputs)
-            total_acc['action_acc'] += (action==target_action).float().item()/len(stim_inputs)
+            total_loss['action'] += F.mse_loss(output_action.detach(), target_action).detach().item()/len(stim_inputs)
+            total_acc['action_acc'] += (action==target_action.argmax(dim=-1)).float().item()/len(stim_inputs)
 
             total_loss['block_type'] += F.cross_entropy(output_block_type.detach(), target_block_type, 
                                                         weight=0.5/torch.tensor(what_where_task.block_type_probs)).detach().item()/len(stim_inputs)
@@ -138,19 +135,17 @@ def train(model, iters):
             # regularize firing rates
             loss += args.l2r*hs.pow(2).mean()/4  # + args.l1r*hs.abs().mean()
             
-            '''fourth phase, give stimuli and choice, and update weights'''
+            '''fourth phase, give reward and update weights'''
             all_x = {
-                'fixation': torch.zeros(args.batch_size, 1, device=device),
+                'fixation': torch.ones(args.batch_size, 1, device=device),
                 'stimulus': stim_inputs[i],
-                'reward': torch.eye(2, device=device)[None][range(args.batch_size), rwd_ch], # 2+2 for chosen and unchosen rewards
-                'action': torch.eye(2, device=device)[None][range(args.batch_size), action], # left/right
+                'reward': torch.eye(2, device=device)[None][range(args.batch_size), rwd_ch], # no reward/reward
+                # 'action': torch.eye(2, device=device)[None][range(args.batch_size), action], # left/right
             }
-
-            output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_choice, 
-                                            neumann_order=args.neumann_order,
-                                            hidden=hidden, w_hidden=w_hidden, 
-                                            update_w=True)
-
+            output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_rwd, 
+                                                neumann_order=args.neumann_order,
+                                                hidden=hidden, w_hidden=w_hidden, 
+                                                DAs=(2*rwd_ch-1).float())
             loss += args.l2r*hs.pow(2).mean()/4 # + args.l1r*hs.abs().mean()
 
             # regularize weight
@@ -223,57 +218,58 @@ def eval(model, epoch):
                         'fixation': torch.zeros(args.batch_size, 1, device=device),
                         'stimulus': torch.zeros_like(stim_inputs[i]),
                         'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
-                        'action': torch.zeros(args.batch_size, 2, device=device), # left/right
+                        # 'action': torch.zeros(args.batch_size, 2, device=device), # left/right
                     }
 
                     _, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_ITI, 
                                                     neumann_order=args.neumann_order,
                                                     hidden=hidden, w_hidden=w_hidden, 
-                                                    update_w=False)
+                                                    DAs=None)
                     
                     ''' second phase, give fixation '''
                     all_x = {
                         'fixation': torch.ones(args.batch_size, 1, device=device),
                         'stimulus': torch.zeros_like(stim_inputs[i]),
                         'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
-                        'action': torch.zeros(args.batch_size, 2, device=device), # left/right
+                        # 'action': torch.zeros(args.batch_size, 2, device=device), # left/right
                     }
 
                     _, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_fixation, 
                                                     neumann_order=args.neumann_order,
                                                     hidden=hidden, w_hidden=w_hidden, 
-                                                    update_w=False)
+                                                    DAs=None)
 
                     ''' third phase, give stimuli and no feedback '''
                     all_x = {
-                        'fixation': torch.zeros(args.batch_size, 1, device=device),
+                        'fixation': torch.ones(args.batch_size, 1, device=device),
                         'stimulus': stim_inputs[i],
                         'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
-                        'action': torch.zeros(args.batch_size, 2, device=device), # left/right
+                        # 'action': torch.zeros(args.batch_size, 2, device=device), # left/right
                     }
 
                     output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_stim, 
                                                         neumann_order=args.neumann_order,
                                                         hidden=hidden, w_hidden=w_hidden, 
-                                                        update_w=False)
+                                                        DAs=None)
 
                     ''' use output to calculate action, reward, and record loss function '''
-                    action = torch.multinomial(output['action'][...,:2].softmax(-1), num_samples=1).squeeze(-1) # (batch size, )
+                    action = torch.argmax(output['action'], dim=-1) # (batch size, )
                     rwd_ch = rewards[i][range(args.batch_size),action] # (batch size, )
-                    loss.append((action==targets[i]).float()) # (batch size, )
+                    loss.append((action==targets[i].argmax(dim=-1)).float()) # (batch size, )
 
-                    '''fourth phase, give stimuli and choice, and update weights'''
+                    '''fourth phase, give reward and update weights'''
+                    # give reward
                     all_x = {
-                        'fixation': torch.zeros(args.batch_size, 1, device=device),
+                        'fixation': torch.ones(args.batch_size, 1, device=device),
                         'stimulus': stim_inputs[i],
                         'reward': torch.eye(2, device=device)[None][range(args.batch_size), rwd_ch], # reward/reward
-                        'action': torch.eye(2, device=device)[None][range(args.batch_size), action], # left/right
+                        # 'action': torch.eye(2, device=device)[None][range(args.batch_size), action], # left/right
                     }
 
-                    output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_choice, 
+                    output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_rwd, 
                                                     neumann_order=args.neumann_order,
                                                     hidden=hidden, w_hidden=w_hidden, 
-                                                    update_w=True)
+                                                    DAs=(2*rwd_ch-1).float())
         
                 loss = torch.stack(loss, dim=0) # shape: (trials_per_test_block, batch_size)
                 curr_block_losses.append(loss) # (eval_samples, trials_per_test_block, batch_size)
@@ -351,7 +347,7 @@ if __name__ == "__main__":
         'fixation': (1, [0]),
         'stimulus': (args.stim_dims*2, [0]),
         'reward': (2, [0]), 
-        'action': (2, [0]), 
+        # 'action': (2, [0]), 
     }
 
     # decode the action and stimulus to choose at the end of fixation and during choice using separate readouts
@@ -365,7 +361,7 @@ if __name__ == "__main__":
     total_trial_time = what_where_task.times['ITI']+\
                         what_where_task.times['fixation_time']+\
                         what_where_task.times['stim_time']+\
-                        what_where_task.times['choice_reward_time']
+                        what_where_task.times['reward_time']
 
     model_specs = {'input_config': input_config, 'hidden_size': args.hidden_size, 'output_config': output_config,
                    'num_areas': args.num_areas, 'plastic': args.plas_type=='all', 'activation': args.activ_func,
@@ -375,7 +371,7 @@ if __name__ == "__main__":
                    'inter_regional_sparsity': (1, 1), 'inter_regional_gain': (1, 1)}
     
     model = HierarchicalPlasticRNN(**model_specs).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, eps=1e-6)
     print(model)
     for n, p in model.named_parameters():
         print(n, p.numel())

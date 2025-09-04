@@ -164,56 +164,6 @@ class EILinear(nn.Module):
                 result += self.bias
             return result
 
-# class MaskedLinear(nn.Module):
-#     def __init__(self, input_size, output_size, bias, 
-#                  conn_mask=None, init_gain=None):
-#         super().__init__()
-#         self.input_size = input_size
-#         self.output_size = output_size
-
-#         self.weight = nn.Parameter(torch.empty(output_size, input_size))
-#         # No sign constraints - all weights can be positive or negative
-#         exist_mask = torch.ones(1, input_size)
-
-#         if conn_mask is None:
-#             mask = exist_mask.repeat([output_size, 1])
-#             self.register_buffer('mask', mask)
-#         else:
-#             mask = exist_mask.repeat([output_size, 1]) * conn_mask
-#             self.register_buffer('mask', mask)
-
-#         if bias:
-#             self.bias = nn.Parameter(torch.empty(output_size))
-#         else:
-#             self.register_parameter('bias', None)
-#         self.reset_parameters(init_gain)
-
-#     def reset_parameters(self, init_gain):
-#         with torch.no_grad():
-#             # Initialize weights with Gaussian distribution using Glorot-style variance
-#             nn.init.kaiming_normal_(self.weight, a=1)
-            
-#             if init_gain is not None:
-#                 self.weight.data *= init_gain
-
-#             if self.bias is not None:
-#                 nn.init.zeros_(self.bias)
-    
-#     def effective_weight(self, w=None):
-#         if w is None:
-#             return self.weight * self.mask
-#         else:
-#             return w * self.mask
-
-#     def forward(self, input, w=None):
-#         if w is None:
-#             return F.linear(input, self.effective_weight(), self.bias)
-#         else:
-#             result = torch.bmm(self.effective_weight(w), input.unsqueeze(2)).squeeze(2) 
-#             if self.bias is not None:
-#                 result += self.bias
-#             return result
-
 
 class PlasticSynapse(nn.Module):
     def __init__(self, input_size, output_size, dt_w, tau_w, weight_bound, sigma_w, plas_mask):
@@ -395,7 +345,7 @@ class HierarchicalPlasticRNN(nn.Module):
             return [h_init]
 
     def forward(self, x, steps, neumann_order=10, 
-                hidden=None, w_hidden=None, update_w=False, 
+                hidden=None, w_hidden=None, DAs=None, 
                 save_all_states=False):
         # initialize firing rate and fixed weight
         if hidden is None and w_hidden is None:
@@ -403,7 +353,7 @@ class HierarchicalPlasticRNN(nn.Module):
         
         if save_all_states: 
             hs = []
-
+    
         # fixed point iterations, not keeping gradient
         for _ in range(steps-neumann_order):
             with torch.no_grad():
@@ -417,9 +367,7 @@ class HierarchicalPlasticRNN(nn.Module):
             if save_all_states:
                 hs.append(hidden)
 
-        # if dopamine is not None, update weight
-        if update_w is True:
-            DAs = (torch.tensor([[-1, 1]])*x['reward']).sum(-1)
+        if DAs is not None:
             w_hidden = self.plasticity(w_hidden, self.rnn.h2h.pos_func(self.rnn.h2h.weight).unsqueeze(0), DAs, output, output)
         
         if save_all_states:

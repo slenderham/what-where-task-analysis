@@ -9,7 +9,7 @@
 XDG_RUNTIME_DIR=""
 node=$(hostname -s)
 user=$(whoami)
-cluster="discovery"
+cluster="discovery8"
 
 port=`echo $(( 8888 ))`
 
