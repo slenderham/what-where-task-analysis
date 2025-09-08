@@ -344,10 +344,10 @@ class HierarchicalPlasticRNN(nn.Module):
         else:
             return [h_init]
 
-    def forward(self, x, steps, neumann_order=10, 
+    def forward(self, x, steps, neumann_order=5, 
                 hidden=None, w_hidden=None, DAs=None, 
                 save_all_states=False):
-        # initialize firing rate and fixed weight
+        # initialize firing rate and fixed weight if not provided
         if hidden is None and w_hidden is None:
             hidden, w_hidden = self.init_hidden(x)
         
@@ -361,7 +361,7 @@ class HierarchicalPlasticRNN(nn.Module):
             if save_all_states:
                 hs.append(hidden)
         # k-order neumann series approximation
-        hidden = hidden.detach()
+        # hidden = hidden.detach()
         for _ in range(min(steps, neumann_order)):
             hidden, output = self.rnn(x, hidden, w_hidden)
             if save_all_states:
