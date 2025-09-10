@@ -50,7 +50,8 @@ def train(model, iters):
                 'fixation': torch.zeros(args.batch_size, 1, device=device),
                 'stimulus': torch.zeros_like(stim_inputs[i]),
                 'reward': torch.zeros(args.batch_size, 2, device=device), # 2+2 for chosen and unchosen rewards
-                # 'action': torch.zeros(args.batch_size, 2, device=device), # left/right
+                'stim_chosen': torch.zeros(args.batch_size, args.stim_dims, device=device),
+                # 'action_chosen': torch.zeros(args.batch_size, 2, device=device), # left/right
             }
 
             _, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_ITI, 
@@ -66,7 +67,8 @@ def train(model, iters):
                 'fixation': torch.ones(args.batch_size, 1, device=device),
                 'stimulus': torch.zeros_like(stim_inputs[i]),
                 'reward': torch.zeros(args.batch_size, 2, device=device), # 2+2 for chosen and unchosen rewards
-                # 'action': torch.zeros(args.batch_size, 2, device=device), # left/right
+                'stim_chosen': torch.zeros(args.batch_size, args.stim_dims, device=device),
+                # 'action_chosen': torch.zeros(args.batch_size, 2, device=device), # left/right
             }
 
             output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_fixation, 
@@ -98,7 +100,8 @@ def train(model, iters):
                 'fixation': torch.ones(args.batch_size, 1, device=device),
                 'stimulus': stim_inputs[i],
                 'reward': torch.zeros(args.batch_size, 2, device=device), # 2+2 for chosen and unchosen rewards
-                # 'action': torch.zeros(args.batch_size, 2, device=device), # left/right
+                'stim_chosen': torch.zeros(args.batch_size, args.stim_dims, device=device),
+                # 'action_chosen': torch.zeros(args.batch_size, 2, device=device), # left/right
             }
 
             output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_stim, 
@@ -132,7 +135,8 @@ def train(model, iters):
                 'fixation': torch.ones(args.batch_size, 1, device=device),
                 'stimulus': torch.zeros_like(stim_inputs[i]),  # turn off stimulus input
                 'reward': torch.zeros(args.batch_size, 2, device=device), # 2+2 for chosen and unchosen rewards
-                # 'action': torch.zeros(args.batch_size, 2, device=device), # left/right
+                'stim_chosen': torch.zeros(args.batch_size, args.stim_dims, device=device),
+                # 'action_chosen': torch.zeros(args.batch_size, 2, device=device), # left/right
             }
 
             output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_choice, 
@@ -150,15 +154,12 @@ def train(model, iters):
             loss += args.l2r*hs.pow(2).mean()/5  # + args.l1r*hs.abs().mean()
             
             '''fifth phase, give reward and update weights'''
-            # Create stimulus input with only chosen stimulus shown, zero the other one
-            chosen_stim_input = stim_inputs[i].view(args.batch_size, 2, 2)[range(args.batch_size), action] # (batch_size, 2)
-            chosen_stim_input = chosen_stim_input.repeat(1, 2) # (batch_size, 4)
-            
             all_x = {
                 'fixation': torch.ones(args.batch_size, 1, device=device),
-                'stimulus': chosen_stim_input,  # only chosen stimulus input, zero the other one
+                'stimulus': torch.zeros_like(stim_inputs[i]),  # only chosen stimulus input, zero the other one
                 'reward': torch.eye(2, device=device)[None][range(args.batch_size), rwd_ch], # no reward/reward
-                # 'action': torch.eye(2, device=device)[None][range(args.batch_size), action], # left/right
+                'stim_chosen': stim_inputs[i].view(args.batch_size, 2, args.stim_dims)[range(args.batch_size), action],
+                # 'action_chosen': torch.eye(2, device=device)[None][range(args.batch_size), action], # left/right
             }
             output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_rwd, 
                                                 neumann_order=args.neumann_order,
@@ -237,7 +238,8 @@ def eval(model, epoch):
                         'fixation': torch.zeros(args.batch_size, 1, device=device),
                         'stimulus': torch.zeros_like(stim_inputs[i]),
                         'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
-                        # 'action': torch.zeros(args.batch_size, 2, device=device), # left/right
+                        'stim_chosen': torch.zeros(args.batch_size, args.stim_dims, device=device),
+                        # 'action_chosen': torch.zeros(args.batch_size, 2, device=device), # left/right
                     }
 
                     _, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_ITI, 
@@ -250,7 +252,8 @@ def eval(model, epoch):
                         'fixation': torch.ones(args.batch_size, 1, device=device),
                         'stimulus': torch.zeros_like(stim_inputs[i]),
                         'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
-                        # 'action': torch.zeros(args.batch_size, 2, device=device), # left/right
+                        'stim_chosen': torch.zeros(args.batch_size, args.stim_dims, device=device),
+                        # 'action_chosen': torch.zeros(args.batch_size, 2, device=device), # left/right
                     }
 
                     _, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_fixation, 
@@ -263,7 +266,8 @@ def eval(model, epoch):
                         'fixation': torch.ones(args.batch_size, 1, device=device),
                         'stimulus': stim_inputs[i],
                         'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
-                        # 'action': torch.zeros(args.batch_size, 2, device=device), # left/right
+                        'stim_chosen': torch.zeros(args.batch_size, args.stim_dims, device=device),
+                        # 'action_chosen': torch.zeros(args.batch_size, 2, device=device), # left/right
                     }
 
                     output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_stim, 
@@ -281,7 +285,8 @@ def eval(model, epoch):
                         'fixation': torch.ones(args.batch_size, 1, device=device),
                         'stimulus': torch.zeros_like(stim_inputs[i]),  # turn off stimulus input
                         'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
-                        # 'action': torch.zeros(args.batch_size, 2, device=device), # left/right
+                        'stim_chosen': torch.zeros(args.batch_size, args.stim_dims, device=device),
+                        # 'action_chosen': torch.zeros(args.batch_size, 2, device=device), # left/right
                     }
 
                     output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_choice, 
@@ -291,13 +296,17 @@ def eval(model, epoch):
 
                     '''fifth phase, give reward and update weights'''
                     # Create stimulus input with only chosen stimulus shown, zero the other one
-                    chosen_stim_input = stim_inputs[i].view(args.batch_size, 2, 2)[range(args.batch_size), action] # (batch_size, 2)
-                    chosen_stim_input = chosen_stim_input.repeat(1, 2) # (batch_size, 4)
+                    # chosen_stim_input = stim_inputs[i].view(args.batch_size, 2, args.stim_dims) # (batch_size, 2, 2)
+                    # chosen_action_input = torch.eye(2, device=device)[None][range(args.batch_size), action] # (batch_size, 2)
+                    # chosen_stim_input = chosen_stim_input*chosen_action_input[:,None] # (batch_size, 2, 2)
+                    # chosen_stim_input = chosen_stim_input.view(args.batch_size, 2*args.stim_dims) # (batch_size, 4)
+
                     all_x = {
                         'fixation': torch.ones(args.batch_size, 1, device=device),
-                        'stimulus': chosen_stim_input,  # only chosen stimulus input, zero the other one
+                        'stimulus': torch.zeros_like(stim_inputs[i]),  # only chosen stimulus input, zero the other one
                         'reward': torch.eye(2, device=device)[None][range(args.batch_size), rwd_ch], # reward/reward
-                        # 'action': torch.eye(2, device=device)[None][range(args.batch_size), action], # left/right
+                        'stim_chosen': stim_inputs[i].view(args.batch_size, 2, args.stim_dims)[range(args.batch_size), action],
+                        # 'action_chosen': torch.eye(2, device=device)[None][range(args.batch_size), action], # left/right
                     }
 
                     output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_rwd, 
@@ -329,7 +338,7 @@ if __name__ == "__main__":
     parser.add_argument('--trials_per_block', type=int, default=60, help='Number of trials')
     parser.add_argument('--trials_per_test_block', type=int, default=80, help='Number of trials')
     parser.add_argument('--reward_probs_high', type=float, default=0.7, help='Reward probability of better option')
-    parser.add_argument('--reversal_interval_range', type=int, default=20, help='Range of reversal interval')
+    parser.add_argument('--reversal_interval_range', type=int, default=40, help='Range of reversal interval')
     parser.add_argument('--test_reversal_interval_range', type=int, default=20, help='Range of reversal interval')
     parser.add_argument('--e_prop', type=float, default=4/5, help='Proportion of E neurons')
     parser.add_argument('--batch_size', type=int, default=1, help='Batch size')
@@ -381,7 +390,8 @@ if __name__ == "__main__":
         'fixation': (1, [0]),
         'stimulus': (args.stim_dims*2, [0]),
         'reward': (2, [0]), 
-        # 'action': (2, [0]), 
+        'stim_chosen': (args.stim_dims, [0]),
+        # 'action_chosen': (2, [0]), 
     }
 
     # decode the action and stimulus to choose at the end of fixation and during choice using separate readouts
