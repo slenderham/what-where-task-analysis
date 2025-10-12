@@ -9,19 +9,17 @@ class WhatAndWhereTask():
     def __init__(self, dt, stim_dims):
 
         self.times = {
-            'ITI': 0.5, # no input, no output requirement
-            'fixation_time': 0.5, # fixation input, supervise action output to be equal to each option
-            'stim_time': 0.3, # stimulus input
-            'choice_time': 0.4, # turn off stimulus input, supervise action output to be the correct option
-            'reward_time': 0.5 # give reward, also only show chosen stimulus input, and zero the other one
+            'ITI': 0.4, # no input, no output requirement
+            'fixation_time': 0.4, # fixation input, supervise action output to be equal to each option
+            'stim_time': 0.4, # stimulus input
+            'choice_reward_time': 0.4, # turn off stimulus input, supervise action output to be the correct option
         }
         self.dt = dt
 
         self.T_ITI = int(self.times['ITI']/self.dt)
         self.T_fixation = int(self.times['fixation_time']/self.dt)
         self.T_stim = int(self.times['stim_time']/self.dt)
-        self.T_choice = int(self.times['choice_time']/self.dt)
-        self.T_rwd = int(self.times['reward_time']/self.dt)
+        self.T_choice_reward = int(self.times['choice_reward_time']/self.dt)
 
         self.stim_dims = stim_dims
         self.block_type_probs = [0.4, 0.6]
