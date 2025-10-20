@@ -10,8 +10,8 @@ class WhatAndWhereTask():
 
         self.times = {
             'ITI': 0.4, # no input, no output requirement
-            'fixation_time': 0.4, # fixation input, supervise action output to be equal to each option
-            'stim_time': 0.4, # stimulus input
+            'fixation_time': 0.5, # fixation input, supervise action output to be equal to each option
+            'stim_time': 0.5, # stimulus input
             'choice_reward_time': 0.4, # turn off stimulus input, supervise action output to be the correct option
         }
         self.dt = dt

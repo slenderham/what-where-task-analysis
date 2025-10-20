@@ -249,7 +249,7 @@ class LeakyRNNCell(nn.Module):
 
         self.activation = _get_activation_function(activation)
 
-    def forward(self, x, state, wh):
+    def forward(self, x, state, wh, perturbation=None):
 
         output = self.activation(state)
 
@@ -260,6 +260,8 @@ class LeakyRNNCell(nn.Module):
             total_input += self.x2h[input_name](input_x)
 
         total_input += self.h2h(output, wh)
+        if perturbation is not None:
+            total_input += perturbation
 
         new_state = state * self.oneminusalpha_x + total_input * self.alpha_x + self._sigma_rec * torch.randn_like(state)
         new_output = self.activation(new_state)
@@ -344,9 +346,9 @@ class HierarchicalPlasticRNN(nn.Module):
         else:
             return [h_init]
 
-    def forward(self, x, steps, neumann_order=5, 
+    def forward(self, x, steps, neumann_order=10, 
                 hidden=None, w_hidden=None, DAs=None, 
-                save_all_states=False):
+                save_all_states=False, perturbation=None):
         # initialize firing rate and fixed weight if not provided
         if hidden is None and w_hidden is None:
             hidden, w_hidden = self.init_hidden(x)
@@ -357,13 +359,13 @@ class HierarchicalPlasticRNN(nn.Module):
         # fixed point iterations, not keeping gradient
         for _ in range(steps-neumann_order):
             with torch.no_grad():
-                hidden, output = self.rnn(x, hidden, w_hidden)
+                hidden, output = self.rnn(x, hidden, w_hidden, perturbation=perturbation)
             if save_all_states:
                 hs.append(hidden)
         # k-order neumann series approximation
         # hidden = hidden.detach()
         for _ in range(min(steps, neumann_order)):
-            hidden, output = self.rnn(x, hidden, w_hidden)
+            hidden, output = self.rnn(x, hidden, w_hidden, perturbation=perturbation)
             if save_all_states:
                 hs.append(hidden)
 
