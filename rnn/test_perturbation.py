@@ -98,9 +98,9 @@ def test_model_with_input_perturbation(all_models, perturbation_vectors, test_sa
 
     mdl_indices = list(range(len(all_models)))
     block_type_indices = list(range(2))
-    reversal_interval_indices = [35, 45]
+    reversal_interval_indices = [30, 35, 40, 45, 50]
 
-    perturbation_strengths = [-0.5, -0.25, 0.25, 0.5]
+    perturbation_strengths = [-1, -0.5, 0.5, 1]
     perturbation_phases = [1, 2, 3]
     indices_product = list(itertools.product(mdl_indices, block_type_indices, reversal_interval_indices))
     pert_indices = list(itertools.product(perturbation_strengths, perturbation_phases))
@@ -305,7 +305,7 @@ if __name__ == "__main__":
     # Generate perturbation vectors for each model
     print("Generating perturbation vectors...")
 
-    n_orthogonal_directions = 5
+    n_orthogonal_directions = 1
     aligned_perturbation_vectors, orthogonal_perturbation_vectors = \
         generate_perturbation_vector(all_models, n_orthogonal_directions=n_orthogonal_directions)
     
@@ -315,7 +315,7 @@ if __name__ == "__main__":
 
     print('testing perturbation aligned with block type readout')
     all_saved_states['aligned_perturbation'] = \
-        test_model_with_input_perturbation(all_models, test_samples=5, perturbation_vectors=aligned_perturbation_vectors)
+        test_model_with_input_perturbation(all_models, test_samples=1, perturbation_vectors=aligned_perturbation_vectors)
 
     print('testing perturbation orthogonal to block type readout')
     for i in range(n_orthogonal_directions):

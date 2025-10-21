@@ -260,10 +260,10 @@ class LeakyRNNCell(nn.Module):
             total_input += self.x2h[input_name](input_x)
 
         total_input += self.h2h(output, wh)
-        if perturbation is not None:
-            total_input += perturbation
 
         new_state = state * self.oneminusalpha_x + total_input * self.alpha_x + self._sigma_rec * torch.randn_like(state)
+        if perturbation is not None:
+            new_state += perturbation
         new_output = self.activation(new_state)
         
         return new_state, new_output
