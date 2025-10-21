@@ -27,10 +27,9 @@ def train(model, iters):
     # and loss during choice period: action, stimulus, block type, and saccade
     total_loss = {'dv': 0, 'action': 0, 'stimulus': 0, 'block_type': 0}
 
-    num_loss_components = 4
+    num_loss_components = 3
 
-    num_action_weight = 1/(num_loss_components*2) # fixation for ITT and fixation, action for the stimulus phase
-    num_dv_weight = 1/(num_loss_components*2) # only for the stimulus phase
+    num_action_weight = 1/(num_loss_components*4) # fixation for fixation phase, action for the choice phase, plus the two dv losses
     num_stimulus_weight = 1/(num_loss_components*1) # only for the stimulus phase
     num_block_type_weight = 1/(num_loss_components*2) # for fixation and stimulus phase
     num_phases = 4
@@ -93,7 +92,7 @@ def train(model, iters):
             total_loss['action'] += (output_action[...,0]-output_action[...,1]).pow(2).mean().detach().item()/len(stim_inputs)
             # save the block type loss
             total_loss['block_type'] += F.cross_entropy(output_block_type.detach(), target_block_type, 
-                                                             weight=0.5/torch.tensor(what_where_task.block_type_probs)).detach().item()/len(stim_inputs)
+                                                        weight=0.5/torch.tensor(what_where_task.block_type_probs)).detach().item()/len(stim_inputs)
             total_acc['block_type_acc'] += (output_block_type.argmax(dim=-1)==target_block_type).float().item()/len(stim_inputs)/2
 
             # regularize firing rate
@@ -129,13 +128,13 @@ def train(model, iters):
                                     weight=0.5/torch.tensor(what_where_task.block_type_probs))*num_block_type_weight
 
             if block_type_target[i]==0:
-                loss += F.cross_entropy(output['dv_loc'].flatten(end_dim=-2), target_action)*num_dv_weight
-                loss += (output['dv_stim'][...,0]-output['dv_stim'][...,1]).pow(2).mean()*num_dv_weight
+                loss += F.cross_entropy(output['dv_loc'].flatten(end_dim=-2), target_action)*num_action_weight
+                loss += (output['dv_stim'][...,0]-output['dv_stim'][...,1]).pow(2).mean()*num_action_weight
                 total_loss['dv'] += F.cross_entropy(output['dv_loc'].flatten(end_dim=-2), target_action).detach().item()/len(stim_inputs)
                 total_loss['dv'] += (output['dv_stim'][...,0]-output['dv_stim'][...,1]).pow(2).mean().detach().item()/len(stim_inputs)
             elif block_type_target[i]==1:
-                loss += F.cross_entropy(output['dv_stim'].flatten(end_dim=-2), target_action)*num_dv_weight
-                loss += (output['dv_loc'][...,0]-output['dv_loc'][...,1]).pow(2).mean()*num_dv_weight
+                loss += F.cross_entropy(output['dv_stim'].flatten(end_dim=-2), target_action)*num_action_weight
+                loss += (output['dv_loc'][...,0]-output['dv_loc'][...,1]).pow(2).mean()*num_action_weight
                 total_loss['dv'] += F.cross_entropy(output['dv_stim'].flatten(end_dim=-2), target_action).detach().item()/len(stim_inputs)
                 total_loss['dv'] += (output['dv_loc'][...,0]-output['dv_loc'][...,1]).pow(2).mean().detach().item()/len(stim_inputs)
             else:
