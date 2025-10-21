@@ -32,13 +32,13 @@ def generate_perturbation_vector(all_models, n_orthogonal_directions=5):
     
     for model_idx, model in enumerate(all_models):
         # Extract block type readout weights (hidden_size * num_areas, 2)
-        block_type_weights = model.h2o['block_type'].effective_weight().detach().numpy()
+        block_type_weights = model.h2o['block_type'].effective_weight().detach()
         
         # Get the readout direction (first component of the 2D output)
         block_type_direction = block_type_weights[1]-block_type_weights[0]  # Shape: (hidden_size)
         
         # Normalize the block type direction
-        block_type_direction = block_type_direction / np.linalg.norm(block_type_direction)
+        block_type_direction = block_type_direction / torch.linalg.norm(block_type_direction)
         
         # Generate orthogonal directions using Gram-Schmidt process
         hidden_dim = block_type_direction.shape[0]
@@ -53,16 +53,19 @@ def generate_perturbation_vector(all_models, n_orthogonal_directions=5):
         Q, _ = np.linalg.qr(full_matrix)
         # The first column of Q is aligned with block_type_direction (up to sign),
         # the next n_orthogonal_directions columns are orthogonal to it and to each other
-        orthogonal_directions = torch.from_numpy(Q[:, 1:]).float()
+        orthogonal_directions = torch.from_numpy(Q[:, 1:]).float().t() # (n_orthogonal_directions, hidden_dim)
         
         # Combine all directions for this model
         aligned_perturbation_vectors.append(block_type_direction)
         orthogonal_perturbation_vectors.append(orthogonal_directions)
+
+    aligned_perturbation_vectors = torch.stack(aligned_perturbation_vectors) # (num_models, hidden_dim)
+    orthogonal_perturbation_vectors = torch.stack(orthogonal_perturbation_vectors) # (num_models, n_orthogonal_directions, hidden_dim)
     
     return aligned_perturbation_vectors, orthogonal_perturbation_vectors
 
 
-def test_model_with_input_perturbation(all_models, perturbation_vectors, test_samples=4):
+def test_model_with_input_perturbation(all_models, perturbation_vectors, test_samples=10):
     """
     Alternative version that adds perturbation directly to input vectors instead of hidden states.
     
@@ -95,9 +98,9 @@ def test_model_with_input_perturbation(all_models, perturbation_vectors, test_sa
 
     mdl_indices = list(range(len(all_models)))
     block_type_indices = list(range(2))
-    reversal_interval_indices = [40]
+    reversal_interval_indices = [35, 45]
 
-    perturbation_strengths = [-0.5, 0.5]
+    perturbation_strengths = [-0.5, -0.25, 0.25, 0.5]
     perturbation_phases = [1, 2, 3]
     indices_product = list(itertools.product(mdl_indices, block_type_indices, reversal_interval_indices))
     pert_indices = list(itertools.product(perturbation_strengths, perturbation_phases))
@@ -115,8 +118,8 @@ def test_model_with_input_perturbation(all_models, perturbation_vectors, test_sa
         for indices in indices_product:
             mdl_idx, test_block_type, test_reversal_interval = indices
             current_perturbation_direction = perturbation_vectors[mdl_idx]
-            print(f'Testing model {mdl_idx} out of {len(all_models)}'
-                  f'with block type {test_block_type} out of {len(block_type_indices)}'
+            print(f'Testing model {mdl_idx} out of {len(all_models)} '
+                  f'with block type {test_block_type} out of {len(block_type_indices)} '
                   f'and reversal interval {test_reversal_interval} out of {len(reversal_interval_indices)}')
 
             for _ in range(test_samples):
@@ -302,7 +305,7 @@ if __name__ == "__main__":
     # Generate perturbation vectors for each model
     print("Generating perturbation vectors...")
 
-    n_orthogonal_directions = 1
+    n_orthogonal_directions = 5
     aligned_perturbation_vectors, orthogonal_perturbation_vectors = \
         generate_perturbation_vector(all_models, n_orthogonal_directions=n_orthogonal_directions)
     
@@ -310,12 +313,15 @@ if __name__ == "__main__":
 
     all_saved_states = {'aligned_perturbation': [], 'orthogonal_perturbation': []}
 
+    print('testing perturbation aligned with block type readout')
     all_saved_states['aligned_perturbation'] = \
-        test_model_with_input_perturbation(all_models, test_samples=1, perturbation_vectors=aligned_perturbation_vectors)
+        test_model_with_input_perturbation(all_models, test_samples=5, perturbation_vectors=aligned_perturbation_vectors)
 
+    print('testing perturbation orthogonal to block type readout')
     for i in range(n_orthogonal_directions):
+        print(f'testing orthogonal perturbation {i} out of {n_orthogonal_directions}')
         all_saved_states['orthogonal_perturbation'].append(
-            test_model_with_input_perturbation(all_models, test_samples=1, perturbation_vectors=orthogonal_perturbation_vectors[i]))
+            test_model_with_input_perturbation(all_models, test_samples=1, perturbation_vectors=orthogonal_perturbation_vectors[:, i, :]))
 
     print('simulation complete')
     with open(test_activities_dir, 'wb') as f:
