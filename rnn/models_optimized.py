@@ -324,7 +324,7 @@ class HierarchicalPlasticRNN(nn.Module):
 
         # readout
         self.h2o = {}
-        for (output_name, (output_size, output_source)) in self.output_config.items():
+        for (output_name, (output_size, output_source, _)) in self.output_config.items():
             curr_out_mask = torch.zeros(1, self.num_areas)
             curr_out_mask[:,output_source] = 1
             self.h2o[output_name] = EILinear(self.hidden_size*self.num_areas, output_size, remove_diag=False, pos_function='abs',
@@ -354,30 +354,31 @@ class HierarchicalPlasticRNN(nn.Module):
             hidden, w_hidden = self.init_hidden(x)
         
         if save_all_states: 
-            hs = []
+            hs = torch.zeros(steps, self.hidden_size*self.num_areas, device=x['reward'].device)
     
         # fixed point iterations, not keeping gradient
-        for _ in range(steps-neumann_order):
+        for step_idx in range(steps-neumann_order):
             with torch.no_grad():
                 hidden, output = self.rnn(x, hidden, w_hidden, perturbation=perturbation)
             if save_all_states:
-                hs.append(hidden)
+                hs[step_idx:step_idx+1] = hidden
         # k-order neumann series approximation
         # hidden = hidden.detach()
-        for _ in range(min(steps, neumann_order)):
+        for step_idx in range(min(steps, neumann_order)):
             hidden, output = self.rnn(x, hidden, w_hidden, perturbation=perturbation)
             if save_all_states:
-                hs.append(hidden)
+                hs[step_idx:step_idx+1] = hidden
 
         if DAs is not None:
             w_hidden = self.plasticity(w_hidden, self.rnn.h2h.pos_func(self.rnn.h2h.weight).unsqueeze(0), DAs, output, output)
         
-        if save_all_states:
-            hs = torch.stack(hs, dim=0)
-        else:
+        if not save_all_states:
             hs = output
 
         os = {}
         for output_name in self.h2o.keys():
-            os[output_name] = self.h2o[output_name](output)
+            if self.output_config[output_name][2] is True:
+                os[output_name] = self.h2o[output_name](output)
+            else:
+                os[output_name] = self.h2o[output_name](output.detach())
         return os, hidden, w_hidden, hs

@@ -25,11 +25,10 @@ def train(model, iters):
     total_acc = {'action_acc': 0, 'block_type_acc': 0}
     # to save the loss during fixation period: fixation, preparatory block type, 
     # and loss during choice period: action, stimulus, block type, and saccade
-    total_loss = {'dv': 0, 'action': 0, 'stimulus': 0, 'block_type': 0}
+    total_loss = {'dV_update': 0, 'action': 0, 'stimulus': 0, 'block_type': 0}
 
     num_loss_components = 3
-
-    num_action_weight = 1/(num_loss_components*4) # fixation for fixation phase, action for the choice phase, plus the two dv losses
+    num_action_weight = 1/(num_loss_components*2) # fixation for fixation phase, action for the choice phase
     num_stimulus_weight = 1/(num_loss_components*1) # only for the stimulus phase
     num_block_type_weight = 1/(num_loss_components*2) # for fixation and stimulus phase
     num_phases = 4
@@ -46,10 +45,16 @@ def train(model, iters):
         action_targets = trial_info['action_targets'].to(device)
         block_type_target = trial_info['block_types'].to(device) # (batch_size, )
         stimulus_targets = trial_info['stimulus_targets'].to(device) # (batch_size, 2)
+        stimulus_configs = trial_info['stim_configs'].to(device) # (batch_size, )
         
         loss = 0
         hidden = None
         w_hidden = None
+        
+        # the direction of update, based on the action and stimulus information
+        # set this to be None for the first trial
+        loc_update_targets = None
+        img_update_targets = None
 
         for i in range(len(stim_inputs)):
             ''' first phase, give nothing '''
@@ -118,7 +123,8 @@ def train(model, iters):
             target_action = action_targets[i].flatten() # (batch_size, )
             loss += F.cross_entropy(output_action, target_action)*num_action_weight
 
-            output_stimulus = output['stimulus'].flatten() # (batch_size, 2)
+            output_stimulus = output['stimulus'].flatten() # (batch_size, 4)
+            output_stimulus = output_stimulus[...,[1,3]]-output_stimulus[...,[0,2]] # (batch_size, 2)
             target_stimulus = stimulus_targets[i].flatten() # (batch_size, 2)
             loss += F.mse_loss(output_stimulus, target_stimulus)*num_stimulus_weight
 
@@ -127,18 +133,19 @@ def train(model, iters):
             loss += F.cross_entropy(output_block_type, target_block_type, 
                                     weight=0.5/torch.tensor(what_where_task.block_type_probs))*num_block_type_weight
 
-            if block_type_target[i]==0:
-                loss += F.cross_entropy(output['dv_loc'].flatten(end_dim=-2), target_action)*num_action_weight
-                loss += (output['dv_stim'][...,0]-output['dv_stim'][...,1]).pow(2).mean()*num_action_weight
-                total_loss['dv'] += F.cross_entropy(output['dv_loc'].flatten(end_dim=-2), target_action).detach().item()/len(stim_inputs)
-                total_loss['dv'] += (output['dv_stim'][...,0]-output['dv_stim'][...,1]).pow(2).mean().detach().item()/len(stim_inputs)
-            elif block_type_target[i]==1:
-                loss += F.cross_entropy(output['dv_stim'].flatten(end_dim=-2), target_action)*num_action_weight
-                loss += (output['dv_loc'][...,0]-output['dv_loc'][...,1]).pow(2).mean()*num_action_weight
-                total_loss['dv'] += F.cross_entropy(output['dv_stim'].flatten(end_dim=-2), target_action).detach().item()/len(stim_inputs)
-                total_loss['dv'] += (output['dv_loc'][...,0]-output['dv_loc'][...,1]).pow(2).mean().detach().item()/len(stim_inputs)
-            else:
-                raise ValueError
+            if loc_update_targets is not None and img_update_targets is not None:
+                if block_type_target[i]==0: # where block
+                    loss += F.cross_entropy(output['where_loc_update'].flatten(end_dim=-2), loc_update_targets)
+                    loss += F.cross_entropy(output['where_img_update'].flatten(end_dim=-2), img_update_targets)
+                    total_loss['dV_update'] += F.cross_entropy(output['where_loc_update'].flatten(end_dim=-2), loc_update_targets).detach().item()/len(stim_inputs)
+                    total_loss['dV_update'] += F.cross_entropy(output['where_img_update'].flatten(end_dim=-2), img_update_targets).detach().item()/len(stim_inputs)
+                elif block_type_target[i]==1: # what block
+                    loss += F.cross_entropy(output['what_loc_update'].flatten(end_dim=-2), loc_update_targets)
+                    loss += F.cross_entropy(output['what_img_update'].flatten(end_dim=-2), img_update_targets)
+                    total_loss['dV_update'] += F.cross_entropy(output['what_loc_update'].flatten(end_dim=-2), loc_update_targets).detach().item()/len(stim_inputs)
+                    total_loss['dV_update'] += F.cross_entropy(output['what_img_update'].flatten(end_dim=-2), img_update_targets).detach().item()/len(stim_inputs)
+                else:
+                    raise ValueError
            
             total_loss['stimulus'] += F.mse_loss(output_stimulus.detach(), target_stimulus).detach().item()/len(stim_inputs)
             total_loss['action'] += F.cross_entropy(output_action.detach(), target_action).detach().item()/len(stim_inputs)
@@ -170,6 +177,16 @@ def train(model, iters):
             if args.num_areas>1:
                 loss += args.l1w*(model.mask_rec_inter*w_hidden).abs().sum(dim=(-2,-1)).mean()
 
+            # update loc_hist_targets and img_hist_targets for the next trial, only need this for all trials except the last one
+            if i<len(stim_inputs)-1:
+                loc_update_targets = (2*rwd_ch-1)*(2*action-1) # (batch_size, )
+                loc_update_targets = ((loc_update_targets+1)/2).long() # (batch_size, )
+                img_update_targets = (2*rwd_ch-1)*(2*action-1)*(2*stimulus_configs[i]-1)*(2*stimulus_targets[i+1]-1) # (batch_size, )
+                img_update_targets = ((img_update_targets+1)/2).long() # (batch_size, )
+            else:
+                loc_update_targets = None
+                img_update_targets = None
+
         loss /= len(stim_inputs)
         
         # add weight decay for static weights
@@ -192,7 +209,7 @@ def train(model, iters):
                 quit()
             pbar.set_description('Iteration {} Loss: {:.3f}, {:.3f}, {:.3f}, {:.3f}; Acc: {:.3f}, {:.3f}'.format(
                 batch_idx+1, 
-                total_loss['action']/(batch_idx+1), total_loss['dv']/(batch_idx+1),
+                total_loss['action']/(batch_idx+1), total_loss['dV_update']/(batch_idx+1),
                 total_loss['stimulus']/(batch_idx+1), total_loss['block_type']/(batch_idx+1), 
                 total_acc['action_acc']/(batch_idx+1), total_acc['block_type_acc']/(batch_idx+1)))
             # pbar.refresh()
@@ -372,11 +389,16 @@ if __name__ == "__main__":
     # decode the action and stimulus to choose at the end of fixation and during choice using separate readouts
     # also decode the block type
     output_config = {
-        'action': (2, [0]), # action value decoding, left, right, 
-        'dv_loc': (2, [0]), # location decoding, left/right in where blocks, 0 in what blocks
-        'dv_stim': (2, [0]), # dv stimulus decoding, left/right stimulus in what blocks, 0 in where blocks
-        'stimulus': (args.stim_dims, [0]), # stimulus value decoding,stimulus
-        'block_type': (2, [0]), # block type decoding, where or what block
+        'action': (2, [0], True), # action value decoding, left, right, 
+        'stimulus': (args.stim_dims*2, [0], True), # stimulus value decoding,stimulus
+        'block_type': (2, [0], False), # block type decoding, where or what block
+        
+        # decode the desired direction for next choice, separately for block types
+        # detach gradient so that they don't affect the rest of the model
+        'what_loc_update': (2, [0], False), # location decoding, left/right in where blocks, 0 in what blocks
+        'what_img_update': (2, [0], False), # dv stimulus decoding, left/right stimulus in what blocks, 0 in where blocks
+        'where_loc_update': (2, [0], False), # location decoding, left/right in where blocks, 0 in what blocks
+        'where_img_update': (2, [0], False), # dv stimulus decoding, left/right stimulus in what blocks, 0 in where blocks
     }
 
     total_trial_time = what_where_task.times['ITI']+\
@@ -392,6 +414,7 @@ if __name__ == "__main__":
                    'inter_regional_sparsity': (1, 1), 'inter_regional_gain': (1, 1)}
     
     model = HierarchicalPlasticRNN(**model_specs).to(device)
+    model.compile()
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, eps=1e-5)
     print(model)
     for n, p in model.named_parameters():

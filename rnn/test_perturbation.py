@@ -65,7 +65,7 @@ def generate_perturbation_vector(all_models, n_orthogonal_directions=5):
     return aligned_perturbation_vectors, orthogonal_perturbation_vectors
 
 
-def test_model_with_input_perturbation(all_models, perturbation_vectors, test_samples=10):
+def test_model_with_input_perturbation(all_models, perturbation_vectors, ortho_control=False, test_samples=10):
     """
     Alternative version that adds perturbation directly to input vectors instead of hidden states.
     
@@ -73,6 +73,7 @@ def test_model_with_input_perturbation(all_models, perturbation_vectors, test_sa
         all_models: List of trained models
         test_samples: Number of test samples per condition
         perturbation_vectors: List of lists, where each inner list contains perturbation directions for each model
+        ortho_control: Whether to use the perturbation vector, or randomly sample from the orthogonal directions every block
     Returns:
         results_dict: Dictionary containing model results with input perturbation
     """
@@ -92,15 +93,15 @@ def test_model_with_input_perturbation(all_models, perturbation_vectors, test_sa
         'perturbation_strength': [], # num_blocks
         'perturbation_phase': [], # num_blocks
         'reward_probs': [], # num_blocks X num_trials X 2
-        'neuron_states': [], # num_blocks X num_trials X num_timesteps X num_units
-        'synaptic_states': [], # num_blocks X num_trials X num_units X num_units
+        # 'neuron_states': [], # num_blocks X num_trials X num_timesteps X num_units
+        # 'synaptic_states': [], # num_blocks X num_trials X num_units X num_units
     }
 
     mdl_indices = list(range(len(all_models)))
     block_type_indices = list(range(2))
     reversal_interval_indices = [30, 35, 40, 45, 50]
 
-    perturbation_strengths = [-1, -0.5, 0.5, 1]
+    perturbation_strengths = [-1.5, -1, -0.5, 0, 0.5, 1, 1.5]
     perturbation_phases = [1, 2, 3]
     indices_product = list(itertools.product(mdl_indices, block_type_indices, reversal_interval_indices))
     pert_indices = list(itertools.product(perturbation_strengths, perturbation_phases))
@@ -117,7 +118,11 @@ def test_model_with_input_perturbation(all_models, perturbation_vectors, test_sa
     with torch.no_grad():
         for indices in indices_product:
             mdl_idx, test_block_type, test_reversal_interval = indices
-            current_perturbation_direction = perturbation_vectors[mdl_idx]
+            if not ortho_control:
+                current_perturbation_direction = perturbation_vectors[mdl_idx]
+            else:
+                current_perturbation_direction = perturbation_vectors[mdl_idx][torch.randperm(perturbation_vectors[mdl_idx].shape[0])]
+                
             print(f'Testing model {mdl_idx} out of {len(all_models)} '
                   f'with block type {test_block_type} out of {len(block_type_indices)} '
                   f'and reversal interval {test_reversal_interval} out of {len(reversal_interval_indices)}')
@@ -134,6 +139,7 @@ def test_model_with_input_perturbation(all_models, perturbation_vectors, test_sa
                 # use the same sequence of stimuli for all perturbation conditions
                 for pert_idx in pert_indices:
                     perturbation_strength, perturbation_phase = pert_idx
+                    print(f'    testing perturbation strength {perturbation_strength} and phase {perturbation_phase}')
                     current_perturbation = current_perturbation_direction * perturbation_strength
                     stim_inputs = trial_info['stim_inputs'].to(device, dtype=torch.float)
                     rewards = trial_info['rewards'].to(device)
@@ -156,11 +162,11 @@ def test_model_with_input_perturbation(all_models, perturbation_vectors, test_sa
                     results_dict['loc_chosen'].append([])
                     results_dict['reward'].append([])
                     
-                    results_dict['neuron_states'].append([])
-                    results_dict['synaptic_states'].append([])
+                    # results_dict['neuron_states'].append([])
+                    # results_dict['synaptic_states'].append([])
                     
                     for i in range(len(stim_inputs)):
-                        results_dict['neuron_states'][-1].append([])
+                        # results_dict['neuron_states'][-1].append([])
                         
                         ''' first phase, give nothing '''
                         all_x = {
@@ -173,9 +179,9 @@ def test_model_with_input_perturbation(all_models, perturbation_vectors, test_sa
                         _, hidden, w_hidden, hs = all_models[mdl_idx](all_x, steps=what_where_task.T_ITI, 
                                                         neumann_order=0,
                                                         hidden=hidden, w_hidden=w_hidden, 
-                                                        DAs=None, save_all_states=True,
+                                                        DAs=None, save_all_states=False,
                                                         perturbation=None)
-                        results_dict['neuron_states'][-1][-1].append(hs)
+                        # results_dict['neuron_states'][-1][-1].append(hs)
                         
                         ''' second phase, give fixation '''
                         all_x = {
@@ -188,9 +194,9 @@ def test_model_with_input_perturbation(all_models, perturbation_vectors, test_sa
                         _, hidden, w_hidden, hs = all_models[mdl_idx](all_x, steps=what_where_task.T_fixation, 
                                                         neumann_order=0,
                                                         hidden=hidden, w_hidden=w_hidden, 
-                                                        DAs=None, save_all_states=True,
+                                                        DAs=None, save_all_states=False,
                                                         perturbation=current_perturbation if perturbation_phase == 1 else None)
-                        results_dict['neuron_states'][-1][-1].append(hs)
+                        # results_dict['neuron_states'][-1][-1].append(hs)
 
                         ''' third phase, give stimuli and no feedback '''
                         all_x = {
@@ -203,9 +209,9 @@ def test_model_with_input_perturbation(all_models, perturbation_vectors, test_sa
                         output, hidden, w_hidden, hs = all_models[mdl_idx](all_x, steps=what_where_task.T_stim, 
                                                             neumann_order=0,
                                                             hidden=hidden, w_hidden=w_hidden, 
-                                                            DAs=None, save_all_states=True,
+                                                            DAs=None, save_all_states=False,
                                                             perturbation=current_perturbation if perturbation_phase == 2 else None)
-                        results_dict['neuron_states'][-1][-1].append(hs)
+                        # results_dict['neuron_states'][-1][-1].append(hs)
 
                         ''' use output to calculate action, reward, and record loss function '''
                         action = torch.multinomial(output['action'].softmax(-1), num_samples=1).squeeze(-1) # (batch size, )
@@ -227,20 +233,20 @@ def test_model_with_input_perturbation(all_models, perturbation_vectors, test_sa
                         output, hidden, w_hidden, hs = all_models[mdl_idx](all_x, steps=what_where_task.T_choice_reward, 
                                                         neumann_order=0,
                                                         hidden=hidden, w_hidden=w_hidden, 
-                                                        DAs=(2*rwd_ch-1), save_all_states=True,
+                                                        DAs=(2*rwd_ch-1), save_all_states=False,
                                                         perturbation=current_perturbation if perturbation_phase == 3 else None)
-                        results_dict['neuron_states'][-1][-1].append(hs)
-                        results_dict['synaptic_states'][-1].append(w_hidden)
+                        # results_dict['neuron_states'][-1][-1].append(hs)
+                        # results_dict['synaptic_states'][-1].append(w_hidden)
 
-                        results_dict['neuron_states'][-1][-1] = np.concatenate(results_dict['neuron_states'][-1][-1], axis=0) # num_timesteps, batch_size, num_dims
+                        # results_dict['neuron_states'][-1][-1] = np.concatenate(results_dict['neuron_states'][-1][-1], axis=0) # num_timesteps, batch_size, num_dims
 
             # collect results in 
             results_dict['img_chosen'][-1] = np.array(results_dict['img_chosen'][-1]) # num_trials X batch_size
             results_dict['loc_chosen'][-1] = np.array(results_dict['loc_chosen'][-1]) # num_trials X batch_size 
             results_dict['reward'][-1] = np.array(results_dict['reward'][-1]) # num_trials X batch_size
 
-            results_dict['neuron_states'][-1] = np.stack(results_dict['neuron_states'][-1]) # num_trials, num_timesteps, batch_size, num_dims
-            results_dict['synaptic_states'][-1] = np.stack(results_dict['synaptic_states'][-1]) # num_trials X batch_size X num_dims X num_dims
+            # results_dict['neuron_states'][-1] = np.stack(results_dict['neuron_states'][-1]) # num_trials, num_timesteps, batch_size, num_dims
+            # results_dict['synaptic_states'][-1] = np.stack(results_dict['synaptic_states'][-1]) # num_trials X batch_size X num_dims X num_dims
         
     for k, v in results_dict.items():
         results_dict[k] = np.stack(v)
@@ -315,13 +321,11 @@ if __name__ == "__main__":
 
     print('testing perturbation aligned with block type readout')
     all_saved_states['aligned_perturbation'] = \
-        test_model_with_input_perturbation(all_models, test_samples=1, perturbation_vectors=aligned_perturbation_vectors)
+        test_model_with_input_perturbation(all_models, test_samples=10, perturbation_vectors=aligned_perturbation_vectors, ortho_control=False)
 
     print('testing perturbation orthogonal to block type readout')
-    for i in range(n_orthogonal_directions):
-        print(f'testing orthogonal perturbation {i} out of {n_orthogonal_directions}')
-        all_saved_states['orthogonal_perturbation'].append(
-            test_model_with_input_perturbation(all_models, test_samples=1, perturbation_vectors=orthogonal_perturbation_vectors[:, i, :]))
+    all_saved_states['orthogonal_perturbation'] = \
+        test_model_with_input_perturbation(all_models, test_samples=10, perturbation_vectors=orthogonal_perturbation_vectors, ortho_control=True)
 
     print('simulation complete')
     with open(test_activities_dir, 'wb') as f:

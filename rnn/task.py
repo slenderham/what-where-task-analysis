@@ -117,7 +117,7 @@ class WhatAndWhereTask():
         # if stimulus config is [0 1]/[1 0], action target is left/right, then stimulus target is img_reps[0]
         # if stimulus config is [1 0]/[0 1], action target is left/right, then stimulus target is img_reps[1]
         target_stim = (stim_configs!=action_targets)*1 # (n_trials, )
-        stimulus_targets = img_reps[target_stim] # (n_trials, 2)
+        stimulus_targets = img_reps[target_stim]-1 # (n_trials, 2)
         
         '''sample rewards'''
         rewards = np.empty_like(reward_probs)*np.nan
