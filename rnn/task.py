@@ -9,10 +9,10 @@ class WhatAndWhereTask():
     def __init__(self, dt, stim_dims):
 
         self.times = {
-            'ITI': 0.4, # no input, no output requirement
+            'ITI': 0.5, # no input, no output requirement
             'fixation_time': 0.5, # fixation input, supervise action output to be equal to each option
-            'stim_time': 0.5, # stimulus input
-            'choice_reward_time': 0.4, # turn off stimulus input, supervise action output to be the correct option
+            'stim_time': 0.5, # stimulus input, readout values
+            'choice_reward_time': 0.5, # turn off stimulus input, supervise action output to be the correct option
         }
         self.dt = dt
 

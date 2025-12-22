@@ -7,7 +7,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from matplotlib import pyplot as plt
 
-@torch.jit.script
 def retanh(x):
     return torch.tanh(F.relu(x))
 
@@ -196,16 +195,16 @@ class PlasticSynapse(nn.Module):
         '''
             w: previous plastic weight 
             baseline: fixed weight
-            R: rwd \in {-1, +1}
+            R: rwd in {-1, 0, +1}, 0 signals no weight change
             pre: pre-synaptic firing rates
             post: post-synaptic firing rates
             kappa: learning rate
         '''
+        mask = torch.isclose(R, torch.zeros_like(R)).float()
         new_w = baseline*(self.alpha_w) + w*(1-self.alpha_w) \
             + R*self.effective_lr()*(torch.bmm(post.unsqueeze(2), pre.unsqueeze(1))+self._sigma_w*torch.randn_like(w))
         new_w = torch.clamp(new_w, self.lb, self.ub)
-        return new_w
-    
+        return new_w*mask + w*(1-mask)
 
 class LeakyRNNCell(nn.Module):
     def __init__(self, input_config, hidden_size, num_areas, 
@@ -338,20 +337,18 @@ class HierarchicalPlasticRNN(nn.Module):
         else:
             self.register_buffer("h0", torch.zeros(1, hidden_size*self.num_areas))
 
-    def init_hidden(self, x):
-        batch_size = x['reward'].shape[0]
-        h_init = self.h0 + self.rnn._sigma_rec * torch.randn(batch_size, self.hidden_size*self.num_areas, device=x['reward'].device)
+    def init_hidden(self, batch_size, device):
+        h_init = self.h0 + self.rnn._sigma_rec * torch.randn(batch_size, self.hidden_size*self.num_areas, device=device)
         if self.plastic:
             return [h_init, self.rnn.h2h.pos_func(self.rnn.h2h.weight).unsqueeze(0).repeat(batch_size, 1, 1)]
         else:
             return [h_init]
 
-    def forward(self, x, steps, neumann_order=10, 
-                hidden=None, w_hidden=None, DAs=None, 
-                save_all_states=False, perturbation=None):
-        # initialize firing rate and fixed weight if not provided
-        if hidden is None and w_hidden is None:
-            hidden, w_hidden = self.init_hidden(x)
+    def forward(self, x, steps,
+                hidden, w_hidden, DAs, 
+                neumann_order=10, 
+                save_all_states=False, 
+                perturbation=None):
         
         if save_all_states: 
             hs = torch.zeros(steps, self.hidden_size*self.num_areas, device=x['reward'].device)
@@ -362,22 +359,22 @@ class HierarchicalPlasticRNN(nn.Module):
                 hidden, output = self.rnn(x, hidden, w_hidden, perturbation=perturbation)
             if save_all_states:
                 hs[step_idx:step_idx+1] = hidden
+        hidden = hidden.detach()
+        
         # k-order neumann series approximation
-        # hidden = hidden.detach()
         for step_idx in range(min(steps, neumann_order)):
             hidden, output = self.rnn(x, hidden, w_hidden, perturbation=perturbation)
             if save_all_states:
                 hs[step_idx:step_idx+1] = hidden
 
-        if DAs is not None:
-            w_hidden = self.plasticity(w_hidden, self.rnn.h2h.pos_func(self.rnn.h2h.weight).unsqueeze(0), DAs, output, output)
+        w_hidden = self.plasticity(w_hidden, self.rnn.h2h.pos_func(self.rnn.h2h.weight).unsqueeze(0), DAs, output, output)
         
         if not save_all_states:
             hs = output
 
         os = {}
         for output_name in self.h2o.keys():
-            if self.output_config[output_name][2] is True:
+            if self.output_config[output_name][2]:
                 os[output_name] = self.h2o[output_name](output)
             else:
                 os[output_name] = self.h2o[output_name](output.detach())
