@@ -7,6 +7,8 @@
 #SBATCH --mem=16GB
 #SBATCH --output=exp/test%a/slurm_%j.txt
 
+export TORCHINDUCTOR_CACHE_DIR=/scratch/$USER/job_$SLURM_JOB_ID/torchinductor_cache
+
 python train.py --cuda\
         --save_checkpoint\
         --iters 1000\

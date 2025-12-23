@@ -200,11 +200,11 @@ class PlasticSynapse(nn.Module):
             post: post-synaptic firing rates
             kappa: learning rate
         '''
-        mask = torch.isclose(R, torch.zeros_like(R)).float()
+        update_mask = torch.logical_not(torch.isclose(R, torch.zeros_like(R)))
         new_w = baseline*(self.alpha_w) + w*(1-self.alpha_w) \
             + R*self.effective_lr()*(torch.bmm(post.unsqueeze(2), pre.unsqueeze(1))+self._sigma_w*torch.randn_like(w))
         new_w = torch.clamp(new_w, self.lb, self.ub)
-        return new_w*mask + w*(1-mask)
+        return torch.where(update_mask, new_w, w)
 
 class LeakyRNNCell(nn.Module):
     def __init__(self, input_config, hidden_size, num_areas, 

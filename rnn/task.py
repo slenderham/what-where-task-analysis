@@ -12,12 +12,14 @@ class WhatAndWhereTask():
             'ITI': 0.5, # no input, no output requirement
             'fixation_time': 0.5, # fixation input, supervise action output to be equal to each option
             'stim_time': 0.5, # stimulus input, readout values
+            'delay_time': 0.5, # stimulus input, no output requirement
             'choice_reward_time': 0.5, # turn off stimulus input, supervise action output to be the correct option
         }
         self.dt = dt
 
         self.T_ITI = int(self.times['ITI']/self.dt)
         self.T_fixation = int(self.times['fixation_time']/self.dt)
+        self.T_delay = int(self.times['delay_time']/self.dt) 
         self.T_stim = int(self.times['stim_time']/self.dt)
         self.T_choice_reward = int(self.times['choice_reward_time']/self.dt)
 
