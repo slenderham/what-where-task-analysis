@@ -15,6 +15,50 @@ import pickle
 import argparse
 
 
+def process_unit_regression(unit_idx, unit_firing_rates, df_template, formula, contrasts_to_test, num_timesteps):
+    """
+    Process regression for a single unit across all time points.
+    Module-level function to avoid pickling large arrays in closure.
+    
+    Args:
+        unit_idx: Index of the unit
+        unit_firing_rates: Array of shape (num_trials, num_timesteps) - only this unit's data
+        df_template: DataFrame template (will be copied)
+        formula: Regression formula string
+        contrasts_to_test: Array of contrasts
+        num_timesteps: Number of time steps
+    
+    Returns:
+        (unit_idx, unit_results) tuple
+    """
+    # Create copy of template for this unit
+    df_template_unit = df_template.copy()
+    df_template_unit['fr'] = 0  # Initialize column, will be updated each time point
+    
+    unit_results = []
+    for time_idx in range(num_timesteps):
+        # Update 'fr' column instead of creating new DataFrame
+        df_template_unit['fr'] = unit_firing_rates[:, time_idx]
+        
+        # fit linear model
+        mdl = smf.ols(formula, df_template_unit).fit()
+        contr_pvals = np.array(mdl.t_test(contrasts_to_test).pvalue)
+        
+        # calculate anova
+        anova_mdl = sm.stats.anova_lm(mdl, typ=3)
+
+        # calculate effect size for anova
+        ms_error = anova_mdl.loc[:,'sum_sq'].iloc[-1]/anova_mdl.loc[:,'df'].iloc[-1]
+        omega_sq = (anova_mdl.loc[:,'sum_sq'].iloc[:-1]-anova_mdl.loc[:,'df'].iloc[:-1]*ms_error)/ \
+                        (anova_mdl.loc[:,'sum_sq'].sum()+ms_error)
+
+        pvals = anova_mdl.loc[:,'PR(>F)'].iloc[:-1].to_numpy().squeeze()
+
+        unit_results.append([mdl.params, omega_sq, pvals, contr_pvals, mdl.aic])
+    
+    return unit_idx, unit_results
+
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
@@ -34,7 +78,7 @@ if __name__ == '__main__':
 
     binsize = 0.01
     # gauss_SD = 0.02/binsize
-    win_size = int(0.01/binsize)
+    win_size = int(0.05/binsize)
     stride = int(0.01/binsize)
 
     all_sess_regression_info = {
@@ -144,6 +188,8 @@ if __name__ == '__main__':
                 # C_what_prev, C_where_prev, R_curr
                 X = np.concatenate([task_info, task_info_prev], axis=1)
 
+                # Quick Win #1: Pre-build DataFrame template once (outside all loops)
+                df_template = pd.DataFrame(X, columns=var_names_in_table)
 
                 all_units_beta = np.ones((num_timesteps, num_units, num_betas))*np.nan
                 all_units_exp_var = np.ones((num_timesteps, num_units, num_exp_vars))*np.nan
@@ -151,36 +197,26 @@ if __name__ == '__main__':
                 all_units_contr_pvals = np.ones((num_timesteps, num_units, num_contrs))*np.nan
                 all_units_aics = np.ones((num_timesteps, num_units))*np.nan
 
-                for unit_idx in tqdm(range(num_units)):
-                    def run_linreg_anova(time_idx):
-                        curr_unit_time_fr = neural_data[:, unit_idx, time_idx]
-                        tbl = pd.DataFrame(np.concatenate([curr_unit_time_fr[:, None], X], axis=1),
-                                           columns=['fr']+var_names_in_table)
-                        
-                        # fit linear model
-                        mdl = smf.ols(formula, tbl).fit()
-                        contr_pvals = np.array(mdl.t_test(contrasts_to_test).pvalue)
-                        
-                        # calculate anova
-                        anova_mdl = sm.stats.anova_lm(mdl, typ=3)
+                # Quick Win #2: Process entire unit at once, parallelize across units
+                # Use module-level function to avoid pickling large arrays (neural_data) in closure
+                # Instead, pass only the unit's firing rate data (much smaller)
+                linreg_anova_results = Parallel(n_jobs=args.njobs, timeout=999999)(
+                    delayed(process_unit_regression)(
+                        unit_idx, 
+                        neural_data[:, unit_idx, :],  # Pass only this unit's data, not entire neural_data array
+                        df_template,
+                        formula,
+                        contrasts_to_test,
+                        num_timesteps
+                    ) for unit_idx in tqdm(range(num_units), desc="Processing units"))
 
-                        # calculate effect size for anova
-                        ms_error = anova_mdl.loc[:,'sum_sq'].iloc[-1]/anova_mdl.loc[:,'df'].iloc[-1]
-                        omega_sq = (anova_mdl.loc[:,'sum_sq'].iloc[:-1]-anova_mdl.loc[:,'df'].iloc[:-1]*ms_error)/ \
-                                        (anova_mdl.loc[:,'sum_sq'].sum()+ms_error)
-
-                        pvals = anova_mdl.loc[:,'PR(>F)'].iloc[:-1].to_numpy().squeeze()
-
-                        return [mdl.params, omega_sq, pvals, contr_pvals, mdl.aic]
-
-                    linreg_anova_results = Parallel(n_jobs=args.njobs)(
-                        delayed(run_linreg_anova)(time_idx) for time_idx in range(num_timesteps))
-
-                    all_units_beta[:, unit_idx, :] = np.stack([curr_time_results[0] for curr_time_results in linreg_anova_results])
-                    all_units_exp_var[:, unit_idx, :] = np.stack([curr_time_results[1] for curr_time_results in linreg_anova_results])
-                    all_units_pvals[:, unit_idx, :] = np.stack([curr_time_results[2] for curr_time_results in linreg_anova_results])
-                    all_units_contr_pvals[:, unit_idx, :] = np.stack([curr_time_results[3] for curr_time_results in linreg_anova_results])
-                    all_units_aics[:, unit_idx] = np.stack([curr_time_results[4] for curr_time_results in linreg_anova_results])
+                # Unpack results
+                for unit_idx, unit_results in linreg_anova_results:
+                    all_units_beta[:, unit_idx, :] = np.stack([curr_time_results[0] for curr_time_results in unit_results])
+                    all_units_exp_var[:, unit_idx, :] = np.stack([curr_time_results[1] for curr_time_results in unit_results])
+                    all_units_pvals[:, unit_idx, :] = np.stack([curr_time_results[2] for curr_time_results in unit_results])
+                    all_units_contr_pvals[:, unit_idx, :] = np.stack([curr_time_results[3] for curr_time_results in unit_results])
+                    all_units_aics[:, unit_idx] = np.stack([curr_time_results[4] for curr_time_results in unit_results])
 
                     '''
                     bootstrapping for the null distribution of frac. significant cells and correlation between coefficients

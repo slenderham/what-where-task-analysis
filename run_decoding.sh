@@ -13,10 +13,10 @@
 #SBATCH --cpus-per-task=8
 
 # Request memory
-#SBATCH --mem=16G
+#SBATCH --mem=64G
 
 # Walltime (job duration)
-#SBATCH --time=24:00:00
+#SBATCH --time=120:00:00
 
 #SBATCH --output=slurm_%j.txt
 

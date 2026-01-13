@@ -1,5 +1,7 @@
 import math
 import os
+import sys
+import traceback
 from collections import defaultdict
 
 import numpy as np
@@ -50,7 +52,7 @@ def train(model, iters):
         action_targets = trial_info['action_targets'].to(device)
         block_type_target = trial_info['block_types'].to(device) # (batch_size, )
         stimulus_targets = trial_info['stimulus_targets'].to(device) # (batch_size, 2)
-        stimulus_configs = trial_info['stim_configs'].to(device) # (batch_size, )
+        # reward_probs = trial_info['reward_probs'].to(device) # (batch_size, 2)
         
         loss = 0
         hidden, w_hidden = model.init_hidden(args.batch_size, device)
@@ -90,8 +92,27 @@ def train(model, iters):
             
             # decode action to be fixation
             output_action = output['action'].flatten(end_dim=-2) # (batch_size, 2)
-            loss += F.kl_div(F.log_softmax(output_action, dim=-1), uniform_probs, reduction='batchmean')*num_action_weight
-            total_loss['action'] += F.kl_div(F.log_softmax(output_action.detach(), dim=-1), uniform_probs, reduction='batchmean').detach().item()/len(stim_inputs)
+            loss += F.cross_entropy(output_action, uniform_probs)*num_action_weight
+            total_loss['action'] += F.cross_entropy(output_action.detach(), uniform_probs).detach().item()/len(stim_inputs)
+
+            # decode dv_loc and dv_stim directions
+            output_dv_loc = output['dv_loc'].flatten(end_dim=-2) # (batch_size, 2)
+            output_dv_stim = output['dv_stim'].flatten(end_dim=-2) # (batch_size, 2)
+            target_action = action_targets[i].flatten() # (batch_size, )
+
+            # during fixation, dv_stim should always be zero due to no stimulus information available
+            loss += F.cross_entropy(output_dv_stim, uniform_probs)*num_dv_weight
+            total_loss['dv'] += F.cross_entropy(output_dv_stim.detach(), uniform_probs).detach().item()/len(stim_inputs)
+
+            # only for where blocks, dv_loc should be represented during fixation
+            if block_type_target[i] == 0:
+                loss += F.cross_entropy(output_dv_loc, target_action)*num_dv_weight
+                total_loss['dv'] += F.cross_entropy(output_dv_loc.detach(), target_action).detach().item()/len(stim_inputs)
+            elif block_type_target[i]==1:
+                loss += F.cross_entropy(output_dv_loc, uniform_probs)*num_dv_weight
+                total_loss['dv'] += F.cross_entropy(output_dv_loc.detach(), uniform_probs).detach().item()/len(stim_inputs)
+            else:
+                raise ValueError
 
             # decode block type 
             output_block_type = output['block_type'].flatten(end_dim=-2) # (batch_size, 2)
@@ -121,23 +142,25 @@ def train(model, iters):
 
                 # decode action to be fixation
                 output_action = output['action'].flatten(end_dim=-2) # (batch_size, 2)
-                loss += F.kl_div(F.log_softmax(output_action, dim=-1), uniform_probs, reduction='batchmean')*num_action_weight/p_delay
-                total_loss['action'] += F.kl_div(F.log_softmax(output_action.detach(), dim=-1), uniform_probs, reduction='batchmean').detach().item()/len(stim_inputs)
+                loss += F.cross_entropy(output_action, uniform_probs)*num_action_weight/p_delay
+                total_loss['action'] += F.cross_entropy(output_action.detach(), uniform_probs).detach().item()/len(stim_inputs)
 
                 # decode loc_update and img_update directions
                 output_dv_loc = output['dv_loc'].flatten(end_dim=-2) # (batch_size, 2)
                 output_dv_stim = output['dv_stim'].flatten(end_dim=-2) # (batch_size, 2)
                 target_action = action_targets[i].flatten() # (batch_size, )
                 if block_type_target[i] == 0:
-                    loss += F.cross_entropy(output_dv_loc, target_action)*num_dv_weight/p_delay
-                    loss += F.kl_div(F.log_softmax(output_dv_stim, dim=-1), uniform_probs, reduction='batchmean')*num_dv_weight/p_delay
-                    total_loss['dv'] += F.cross_entropy(output_dv_loc.detach(), target_action).detach().item()/len(stim_inputs)/p_delay
-                    total_loss['dv'] += F.kl_div(F.log_softmax(output_dv_stim.detach(), dim=-1), uniform_probs, reduction='batchmean').detach().item()/len(stim_inputs)/p_delay
-                else:
-                    loss += F.kl_div(F.log_softmax(output_dv_loc, dim=-1), uniform_probs, reduction='batchmean')*num_dv_weight/p_delay
+                    # loss += F.cross_entropy(output_dv_loc, target_action)*num_dv_weight/p_delay
+                    loss += F.cross_entropy(output_dv_stim, uniform_probs)*num_dv_weight/p_delay
+                    # total_loss['dv'] += F.cross_entropy(output_dv_loc.detach(), target_action).detach().item()/len(stim_inputs)/p_delay
+                    total_loss['dv'] += F.cross_entropy(output_dv_stim.detach(), uniform_probs).detach().item()/len(stim_inputs)/p_delay
+                elif block_type_target[i]==1:
+                    # loss += F.cross_entropy(output_dv_loc, uniform_probs)*num_dv_weight/p_delay
                     loss += F.cross_entropy(output_dv_stim, target_action)*num_dv_weight/p_delay
-                    total_loss['dv'] += F.kl_div(F.log_softmax(output_dv_loc.detach(), dim=-1), uniform_probs, reduction='batchmean').detach().item()/len(stim_inputs)/p_delay
+                    # total_loss['dv'] += F.cross_entropy(output_dv_loc.detach(), uniform_probs).detach().item()/len(stim_inputs)/p_delay
                     total_loss['dv'] += F.cross_entropy(output_dv_stim.detach(), target_action).detach().item()/len(stim_inputs)/p_delay
+                else:
+                    raise ValueError
             
                 # decode block type
                 output_block_type = output['block_type'].flatten(end_dim=-2) # (batch_size, 2)
@@ -177,12 +200,18 @@ def train(model, iters):
             total_acc['action_acc'] += (action==target_action).float().item()/len(stim_inputs)
 
             # decode stimulus
-            output_stimulus = output['stimulus'] # (batch_size, 4)
-            output_stimulus = output_stimulus[...,[1,3]]-output_stimulus[...,[0,2]] # (batch_size, 2)
-            output_stimulus = output_stimulus.flatten() # (batch_size, 2)
+            output_stimulus = output['stimulus'].flatten() # (batch_size, 2)
             target_stimulus = stimulus_targets[i].flatten() # (batch_size, 2)
             loss += F.mse_loss(output_stimulus, target_stimulus)*num_stimulus_weight
             total_loss['stimulus'] += F.mse_loss(output_stimulus.detach(), target_stimulus).detach().item()/len(stim_inputs)
+
+            # decode dv_loc and dv_stim directions to be zero (no dQ activity during choice phase)
+            output_dv_loc = output['dv_loc'].flatten(end_dim=-2) # (batch_size, 2)
+            output_dv_stim = output['dv_stim'].flatten(end_dim=-2) # (batch_size, 2)
+            loss += F.cross_entropy(output_dv_stim, uniform_probs)*num_dv_weight
+            total_loss['dv'] += F.cross_entropy(output_dv_stim.detach(), uniform_probs).detach().item()/len(stim_inputs)
+            loss += F.cross_entropy(output_dv_loc, uniform_probs)*num_dv_weight
+            total_loss['dv'] += F.cross_entropy(output_dv_loc.detach(), uniform_probs).detach().item()/len(stim_inputs)
 
             # regularize firing rates
             loss += args.l2r*hs.pow(2).mean()/num_phases  # + args.l1r*hs.abs().mean()
@@ -241,7 +270,11 @@ def train(model, iters):
     for k, v in total_loss.items():
         total_loss[k] = total_loss[k]/iters
     print(f'Training Loss: {[f"{k}: {v:.4f}" for k, v in total_loss.items()]}; Training Acc: {[f"{k}: {v:.4f}" for k, v in total_acc.items()]}')
-    wandb.log({**total_loss, **total_acc})
+    try:
+        wandb.log({**total_loss, **total_acc})
+    except Exception as e:
+        sys.stderr.write(f"Warning: wandb.log failed: {e}\n")
+        sys.stderr.flush()
     return loss.item()
 
 
@@ -337,10 +370,14 @@ def eval(model, epoch):
             losses_stds_by_block_type.append(torch.stack(curr_block_losses, dim=0).std(dim=(0,2))) # (trials_per_test_block)
         print('====> Epoch {} Eval Loss Where Block: {:.3f}, What Block: {:.3f}'.format(
             epoch+1, losses_means_by_block_type[0].mean(), losses_means_by_block_type[1].mean()))
-        wandb.log({
-            'Eval loss where block': losses_means_by_block_type[0].mean(),
-            'Eval loss what block': losses_means_by_block_type[1].mean()
-        })
+        try:
+            wandb.log({
+                'Eval loss where block': losses_means_by_block_type[0].mean(),
+                'Eval loss what block': losses_means_by_block_type[1].mean()
+            })
+        except Exception as e:
+            sys.stderr.write(f"Warning: wandb.log failed: {e}\n")
+            sys.stderr.flush()
         return torch.stack(losses_means_by_block_type, dim=0), torch.stack(losses_stds_by_block_type, dim=0)
 
 if __name__ == "__main__":
@@ -415,7 +452,7 @@ if __name__ == "__main__":
     # also decode the block type
     output_config = {
         'action': (2, [0], True), # action value decoding, left, right, 
-        'stimulus': (args.stim_dims*2, [0], True), # stimulus value decoding,stimulus
+        'stimulus': (args.stim_dims, [0], True), # stimulus value decoding
         'block_type': (2, [0], True), # block type decoding, where or what block
         # decode the desired direction for next choice, separately for block types
         # detach gradient so that they don't affect the rest of the model
@@ -451,24 +488,42 @@ if __name__ == "__main__":
 
     metrics = defaultdict(list)
     best_eval_loss = 0
-    for i in range(args.epochs):
-        training_loss = train(model, args.iters)
-        eval_loss_means, eval_loss_stds = eval(model, i)
-        # lr_scheduler.step()
-        metrics['eval_losses_mean'].append(eval_loss_means.squeeze().tolist())
-        metrics['eval_losses_std'].append(eval_loss_stds.squeeze().tolist())
-        metrics = dict(metrics)
-        save_defaultdict_to_fs(metrics, os.path.join(args.exp_dir, 'metrics.json'))
-        if args.save_checkpoint:
-            if (eval_loss_means).mean().item() > best_eval_loss:
-                is_best_epoch = True
-                best_eval_loss = eval_loss_means.mean().item()
-                metrics['best_epoch'] = i
-                metrics['best_eval_loss'] = best_eval_loss
-            else:
-                is_best_epoch = False
-            save_checkpoint({'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
-                            is_best=is_best_epoch, folder=args.exp_dir, filename='checkpoint.pth.tar', 
-                            best_filename='checkpoint_best.pth.tar')
-    
-    print('====> DONE')
+    try:
+        for i in range(args.epochs):
+            training_loss = train(model, args.iters)
+            eval_loss_means, eval_loss_stds = eval(model, i)
+            # lr_scheduler.step()
+            metrics['eval_losses_mean'].append(eval_loss_means.squeeze().tolist())
+            metrics['eval_losses_std'].append(eval_loss_stds.squeeze().tolist())
+            metrics = dict(metrics)
+            save_defaultdict_to_fs(metrics, os.path.join(args.exp_dir, 'metrics.json'))
+            if args.save_checkpoint:
+                if (eval_loss_means).mean().item() > best_eval_loss:
+                    is_best_epoch = True
+                    best_eval_loss = eval_loss_means.mean().item()
+                    metrics['best_epoch'] = i
+                    metrics['best_eval_loss'] = best_eval_loss
+                else:
+                    is_best_epoch = False
+                save_checkpoint({'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
+                                is_best=is_best_epoch, folder=args.exp_dir, filename='checkpoint.pth.tar', 
+                                best_filename='checkpoint_best.pth.tar')
+        
+        print('====> DONE')
+    except Exception as e:
+        # Use direct stderr write to bypass logging system and avoid recursion
+        sys.stderr.write("\n" + "="*60 + "\n")
+        sys.stderr.write("EXCEPTION OCCURRED DURING TRAINING\n")
+        sys.stderr.write("="*60 + "\n")
+        sys.stderr.write(f"Exception type: {type(e).__name__}\n")
+        sys.stderr.write(f"Exception message: {str(e)}\n")
+        sys.stderr.write("\nFull traceback:\n")
+        traceback.print_exc(file=sys.stderr)
+        sys.stderr.write("="*60 + "\n")
+        sys.stderr.flush()
+        # Try to finish wandb gracefully, but don't let it cause another exception
+        try:
+            wandb.finish()
+        except:
+            pass
+        raise

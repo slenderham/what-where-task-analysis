@@ -1,7 +1,7 @@
 import numpy as np
 from sklearn.linear_model import LogisticRegression, SGDClassifier
 from sklearn.svm import LinearSVC
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, KFold
 import pandas as pd
 import glob
 import h5py
@@ -15,6 +15,50 @@ import os
 import pickle
 import argparse
 
+
+def run_decoding_cross_time(train_time_idx, curr_cond_neural_data, curr_label, num_timesteps, num_resamples):
+    """
+    Run decoding for one training time point, testing on all time points.
+    Module-level function to avoid pickling large arrays in closure.
+    
+    Args:
+        train_time_idx: Training time point index
+        neural_data: Array of shape (num_trials, num_units, num_timesteps)
+        curr_test_data_selector: Boolean array for trial selection
+        curr_label: Array of labels for selected trials
+        num_timesteps: Number of time steps
+        num_resamples: Number of resampling iterations
+    
+    Returns:
+        [all_ws, all_dec_accs] list
+    """
+    # Extract training data once
+    curr_time_fr_train = curr_cond_neural_data[:, :, train_time_idx]  # (num_trials, num_units) for training
+    
+    # fit decoding for CV
+    all_dec_accs = np.nan*np.empty((num_timesteps, num_resamples))  # num_timesteps X num_resamples
+    for sample_idx in range(num_resamples):
+        kf = KFold(n_splits=10)
+        curr_sample_dec_accs = np.nan*np.empty((10, num_timesteps))
+        for fold_idx, (train_index, test_index) in enumerate(kf.split(curr_time_fr_train)):
+            clf_cv = LogisticRegression(C=10**6)
+            clf_cv = clf_cv.fit(curr_time_fr_train[train_index], curr_label[train_index])
+            
+            for test_time_idx in range(num_timesteps):
+                curr_time_fr_test = curr_cond_neural_data[:, :, test_time_idx]
+                curr_sample_dec_accs[fold_idx, test_time_idx] = clf_cv.score(curr_time_fr_test[test_index], curr_label[test_index])
+
+        all_dec_accs[:, sample_idx] = np.mean(curr_sample_dec_accs, axis=0)
+
+    # fit decoding for all
+    clf_full = LogisticRegression(C=10**6).fit(curr_time_fr_train, curr_label)
+    assert(len(clf_full.classes_)==2)
+
+    all_ws = np.concatenate([clf_full.intercept_, clf_full.coef_.squeeze()])
+
+    return [all_ws, all_dec_accs]
+
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
@@ -26,7 +70,7 @@ if __name__ == '__main__':
     aligned_events = ["StimOnset"]
 
     # root_dir = '/Users/f005d7d/Documents/Attn_MdPRL/what-where-task/'
-    root_dir = '/dartfs-hpc/scratch/f005d7d/what_where_analysis/'
+    root_dir = '/dartfs/rc/lab/S/SoltaniA/f005d7d/what_where_analysis/'
 
     bhv_path = os.path.join(root_dir, 'Behavior/')
     processed_path = os.path.join(root_dir, 'processed/')
@@ -99,17 +143,12 @@ if __name__ == '__main__':
                 all_task_info = np.concatenate([task_info[1:], task_info_prev], axis=1)
                 neural_data = neural_data[1:]
 
-                if monkey_idx==0 and sess_idx==2:
-                    unit_idxs = np.ones((neural_data.shape[1]))
-                    unit_idxs[572] = 0
-                    neural_data = neural_data[:,unit_idxs>0.5]
-                    num_units -= 1
+                unit_idxs = np.abs(neural_data).mean((0,2)) < 0.5
+                neural_data = neural_data[:, unit_idxs, :]
+                print(f"discarded units: {np.nonzero(~unit_idxs)}")
+                num_units = neural_data.shape[1]
 
-                if monkey_idx==1 and sess_idx==3:
-                    unit_idxs = np.ones((neural_data.shape[1]))
-                    unit_idxs[429] = 0
-                    neural_data = neural_data[:,unit_idxs>0.5]
-                    num_units -= 1
+                area_idx = area_idx[unit_idxs]
 
                 '''
                 for each decoding test, get 
@@ -144,38 +183,28 @@ if __name__ == '__main__':
                 num_dec_tests = len(data_selectors)
 
                 all_test_ws = np.ones((num_timesteps, num_dec_tests, num_units+1))*np.nan
-                all_test_accs = np.ones((num_timesteps, num_dec_tests, num_resamples))*np.nan
+                all_test_accs = np.ones((num_timesteps, num_dec_tests, num_timesteps, num_resamples))*np.nan
 
-                for idx_dec_test in tqdm(range(num_dec_tests)):
+                for idx_dec_test in tqdm(range(num_dec_tests), desc="Decoding tests"):
                     
-                    curr_test_data_selector = data_selectors[idx_dec_test](all_task_info)
+                    # (num_trials,), mask for trials in the current condition
+                    curr_test_data_selector = data_selectors[idx_dec_test](all_task_info) 
+                    # (num_trials,), masked labels for the current condition
                     curr_label = label_encoder[idx_dec_test](all_task_info)[curr_test_data_selector]
+                    # (num_selected_trials, num_units, num_timesteps)
+                    curr_cond_neural_data = neural_data[curr_test_data_selector]
 
-                    def run_decoding(time_idx):
-                        curr_time_fr = neural_data[:, :, time_idx]
-                        curr_time_fr = curr_time_fr[curr_test_data_selector]
-                        
-                        # fit decoding for CV
-                        all_dec_accs = []
-                        for _ in range(num_resamples):
-                            clf_cv = SGDClassifier(alpha=1e-6, loss='hinge', max_iter=1000, tol=1e-4)
-                            cv_accs = cross_val_score(clf_cv, curr_time_fr, curr_label, cv=10)
-                            all_dec_accs.append(np.mean(cv_accs))
-                        all_dec_accs = np.stack(all_dec_accs).flatten()
-
-                        # fit decoding for all
-                        clf_full = SGDClassifier(alpha=1e-6, loss='hinge', max_iter=1000, tol=1e-4).fit(curr_time_fr, curr_label)
-                        assert(len(clf_full.classes_)==2)
-
-                        all_ws = np.concatenate([clf_full.intercept_, clf_full.coef_.squeeze()])
-
-                        return [all_ws, all_dec_accs]
-
-                    decoding_results = Parallel(n_jobs=args.njobs)(
-                        delayed(run_decoding)(time_idx) for time_idx in range(num_timesteps))
+                    decoding_results = Parallel(n_jobs=args.njobs, verbose=10)(
+                        delayed(run_decoding_cross_time)(
+                            train_time_idx,
+                            curr_cond_neural_data,
+                            curr_label,
+                            num_timesteps,
+                            num_resamples
+                        ) for train_time_idx in range(num_timesteps))
 
                     all_test_ws[:, idx_dec_test, :] = np.stack([curr_time_results[0] for curr_time_results in decoding_results])
-                    all_test_accs[:, idx_dec_test, :] = np.stack([curr_time_results[1] for curr_time_results in decoding_results])
+                    all_test_accs[:, idx_dec_test, :, :] = np.stack([curr_time_results[1] for curr_time_results in decoding_results])
 
                 # all_sess_regression_info['neural_data'].append(neural_data)
                 all_sess_decoding_info['monkey_name'].append(monkey_name)

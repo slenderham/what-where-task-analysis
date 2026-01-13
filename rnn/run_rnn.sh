@@ -15,7 +15,7 @@ python train.py --cuda\
         --epochs 60\
         --hidden_size 80\
         --num_areas 1\
-        --l2r 1e-2\
+        --l2r 1e-1\
         --l2w 1e-5\
         --init_spectral 1.0\
         --balance_ei\
