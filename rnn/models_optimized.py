@@ -248,7 +248,7 @@ class LeakyRNNCell(nn.Module):
 
         self.activation = _get_activation_function(activation)
 
-    def forward(self, x, state, wh, perturbation=None):
+    def forward(self, x, state, wh, current_perturbation=None, connectivity_perturbation=None):
 
         output = self.activation(state)
 
@@ -261,8 +261,8 @@ class LeakyRNNCell(nn.Module):
         total_input += self.h2h(output, wh)
 
         new_state = state * self.oneminusalpha_x + total_input * self.alpha_x + self._sigma_rec * torch.randn_like(state)
-        if perturbation is not None:
-            new_state += perturbation
+        if current_perturbation is not None:
+            new_state += current_perturbation
         new_output = self.activation(new_state)
         
         return new_state, new_output
@@ -348,22 +348,27 @@ class HierarchicalPlasticRNN(nn.Module):
                 hidden, w_hidden, DAs, 
                 neumann_order=10, 
                 save_all_states=False, 
-                perturbation=None):
+                current_perturbation=None,
+                connectivity_perturbation=None):
         
         if save_all_states: 
-            hs = torch.zeros(steps, self.hidden_size*self.num_areas, device=x['reward'].device)
+            hs = torch.zeros(steps, self.hidden_size*self.num_areas, device=hidden.device)
     
         # fixed point iterations, not keeping gradient
         for step_idx in range(steps-neumann_order):
             with torch.no_grad():
-                hidden, output = self.rnn(x, hidden, w_hidden, perturbation=perturbation)
+                hidden, output = self.rnn(x, hidden, w_hidden, 
+                                          current_perturbation=current_perturbation, 
+                                          connectivity_perturbation=connectivity_perturbation)
             if save_all_states:
                 hs[step_idx:step_idx+1] = hidden
         hidden = hidden.detach()
         
         # k-order neumann series approximation
         for step_idx in range(min(steps, neumann_order)):
-            hidden, output = self.rnn(x, hidden, w_hidden, perturbation=perturbation)
+            hidden, output = self.rnn(x, hidden, w_hidden, 
+                                      current_perturbation=current_perturbation, 
+                                      connectivity_perturbation=connectivity_perturbation)
             if save_all_states:
                 hs[step_idx:step_idx+1] = hidden
 

@@ -27,7 +27,7 @@ class WhatAndWhereTask():
         self.block_type_probs = [0.4, 0.6]
 
     def generate_trials(self, batch_size, trials_per_block, reversal_interval, reward_schedule=None,
-                        stim_orders=None, block_type=None):
+                        stim_orders=None, block_type=None, initial_better_option=None):
         
         if reward_schedule is None:
             train_reward_prob_high = np.random.rand()*0.3+0.6 # uniform [0.6, 0.9]
@@ -40,11 +40,13 @@ class WhatAndWhereTask():
             'reward_probs',
             'block_types',
             'action_targets',
-            'stimulus_targets'
+            'stimulus_targets',
+            'dv_loc_targets',
+            'dv_stim_targets'
         ]}
         for sess_idx in range(batch_size):
             curr_sess_trials_info = self._generate_single_trial(trials_per_block, reversal_interval, reward_schedule,
-                                                                stim_orders, block_type)
+                                                                stim_orders, block_type, initial_better_option)
             for k in all_trials_info.keys():
                 all_trials_info[k].append(curr_sess_trials_info[k])
 
@@ -54,7 +56,7 @@ class WhatAndWhereTask():
         return all_trials_info
     
     def _generate_single_trial(self, trials_per_block, reversal_interval, reward_schedule,
-                               stim_orders=None, block_type=None):
+                               stim_orders=None, block_type=None, initial_better_option=None):
         '''sample block type if none is provided'''
         if block_type is None:
             block_type = np.random.choice([0, 1], p=self.block_type_probs)
@@ -82,7 +84,8 @@ class WhatAndWhereTask():
         ], axis=-1) # (n_trials, 2*n_dims)
         
         '''get reward probabilities'''
-        initial_better_option = np.random.randint(2)
+        if initial_better_option is None:
+            initial_better_option = np.random.randint(2)
         reversal_point = np.random.randint(reversal_interval[0]-1, reversal_interval[1])
         reward_probs = np.empty((trials_per_block, 2))*np.nan
         if block_type==0:
@@ -120,6 +123,14 @@ class WhatAndWhereTask():
         # if stimulus config is [1 0]/[0 1], action target is left/right, then stimulus target is img_reps[1]
         target_stim = (stim_configs!=action_targets)*1 # (n_trials, )
         stimulus_targets = img_reps[target_stim] # (n_trials, 2)
+
+        '''get dv targets for location based dv and stimulus based dv'''
+        if block_type==0:
+            dv_loc_targets = reward_probs[...,1]-reward_probs[...,0]
+            dv_stim_targets = np.zeros((trials_per_block,))
+        elif block_type==1:
+            dv_loc_targets = np.zeros((trials_per_block,))
+            dv_stim_targets = reward_probs[...,1]-reward_probs[...,0]
         
         '''sample rewards'''
         rewards = np.empty_like(reward_probs)*np.nan
@@ -155,7 +166,9 @@ class WhatAndWhereTask():
             'reward_probs': torch.from_numpy(reward_probs).float(),
             'block_types': torch.from_numpy(block_type.astype(int)*np.ones((trials_per_block,))).long(),
             'action_targets': torch.from_numpy(action_targets).long(),
-            'stimulus_targets': torch.from_numpy(stimulus_targets).float()
+            'stimulus_targets': torch.from_numpy(stimulus_targets).float(),
+            'dv_loc_targets': torch.from_numpy(dv_loc_targets).float(),
+            'dv_stim_targets': torch.from_numpy(dv_stim_targets).float()
         }
 
 if __name__=='__main__':

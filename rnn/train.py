@@ -19,6 +19,25 @@ from utils import (AverageMeter, load_checkpoint, load_list_from_fs,
                    save_checkpoint, save_defaultdict_to_fs, save_list_to_fs)
 import wandb
 
+def calculate_and_save_loss(key_name, loss_func, output, target, weight, accum_loss, loss_dict):
+    '''
+    Calculate and save the loss for a given key_name, loss_func, output, target, weight, accum_loss, and loss_dict
+    Args:
+        key_name: the name of the loss to save
+        loss_func: the loss function to use
+        output: the output of the model
+        target: the target of the model
+        weight: the weight of the loss
+        accum_loss: the accumulated loss, used for backward pass
+        loss_dict: the dictionary to save the loss, used for logging
+    Returns:
+        accum_loss, loss_dict: the same object updated with the loss of the current batch
+    '''
+    batch_loss = loss_func(output, target)
+    accum_loss += batch_loss*weight
+    loss_dict[key_name] += batch_loss.detach().item()
+    return accum_loss, loss_dict
+
 def train(model, iters):
     model.train()
     optimizer.zero_grad()
@@ -29,14 +48,18 @@ def train(model, iters):
     # and loss during choice period: action, stimulus, block type, and saccade
     total_loss = {'dv': 0, 'action': 0, 'stimulus': 0, 'block_type': 0}
 
-    num_loss_components = 4
-    num_action_weight = 1/(num_loss_components*1) # fixation for fixation phase, action for the choice phase
+    num_loss_components = 5
+    num_action_weight = 1/(num_loss_components*3) # fixation for fixation/delay phase, action for the choice phase
     num_stimulus_weight = 1/(num_loss_components*1) # only for the stimulus phase
-    num_block_type_weight = 1/(num_loss_components*1) # for fixation and stimulus phase
-    num_dv_weight = 1/(num_loss_components*1) # for the stimulus phase
+    num_block_type_weight = 1/(num_loss_components*2) # for fixation and stimulus phase
+    num_dv_weight = 1/(num_loss_components*2) # for the fixation and delay phase
 
     uniform_probs = torch.ones(args.batch_size, 2, device=device)/2 # (batch_size, 2), used for forcing equal probability
-
+    block_type_weights = 0.5/torch.tensor(what_where_task.block_type_probs, device=device) # (2, ), used for weighted cross entropy
+    # loss function for block type, accounting for imbalance in block type distribution
+    block_type_loss_func = lambda output, target: F.cross_entropy(output, target, weight=block_type_weights) 
+    dv_loss_func = lambda output, target: F.mse_loss(output[...,1]-output[...,0], target)
+    
     p_delay = 0.5
     delay_mask = torch.randperm(iters)<(iters*p_delay) # mask for whether to add a delay phase
 
@@ -52,6 +75,8 @@ def train(model, iters):
         action_targets = trial_info['action_targets'].to(device)
         block_type_target = trial_info['block_types'].to(device) # (batch_size, )
         stimulus_targets = trial_info['stimulus_targets'].to(device) # (batch_size, 2)
+        dv_loc_targets = trial_info['dv_loc_targets'].to(device) # (batch_size, 2)
+        dv_stim_targets = trial_info['dv_stim_targets'].to(device) # (batch_size, 2)
         # reward_probs = trial_info['reward_probs'].to(device) # (batch_size, 2)
         
         loss = 0
@@ -67,7 +92,7 @@ def train(model, iters):
                 'go_cue': torch.zeros(args.batch_size, 1, device=device),
                 'fixation': torch.zeros(args.batch_size, 1, device=device),
                 'stimulus': torch.zeros_like(stim_inputs[i]),
-                'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
+                # 'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
                 'action_chosen': torch.zeros(args.batch_size, 2, device=device), # left/right
             }
             output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_ITI, 
@@ -82,7 +107,7 @@ def train(model, iters):
                 'go_cue': torch.zeros(args.batch_size, 1, device=device),
                 'fixation': torch.ones(args.batch_size, 1, device=device),
                 'stimulus': torch.zeros_like(stim_inputs[i]),
-                'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
+                # 'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
                 'action_chosen': torch.zeros(args.batch_size, 2, device=device), # left/right
             }
             output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_fixation, 
@@ -92,36 +117,27 @@ def train(model, iters):
             
             # decode action to be fixation
             output_action = output['action'].flatten(end_dim=-2) # (batch_size, 2)
-            loss += F.cross_entropy(output_action, uniform_probs)*num_action_weight
-            total_loss['action'] += F.cross_entropy(output_action.detach(), uniform_probs).detach().item()/len(stim_inputs)
+            loss, total_loss = calculate_and_save_loss('action', F.cross_entropy, 
+                                                       output_action, uniform_probs, 
+                                                       num_action_weight, loss, total_loss)
 
             # decode dv_loc and dv_stim directions
             output_dv_loc = output['dv_loc'].flatten(end_dim=-2) # (batch_size, 2)
+            loss, total_loss = calculate_and_save_loss('dv', dv_loss_func, 
+                                                        output_dv_loc, dv_loc_targets[i].flatten(), 
+                                                        num_dv_weight, loss, total_loss)
             output_dv_stim = output['dv_stim'].flatten(end_dim=-2) # (batch_size, 2)
-            target_action = action_targets[i].flatten() # (batch_size, )
-
-            # during fixation, dv_stim should always be zero due to no stimulus information available
-            loss += F.cross_entropy(output_dv_stim, uniform_probs)*num_dv_weight
-            total_loss['dv'] += F.cross_entropy(output_dv_stim.detach(), uniform_probs).detach().item()/len(stim_inputs)
-
-            # only for where blocks, dv_loc should be represented during fixation
-            if block_type_target[i] == 0:
-                loss += F.cross_entropy(output_dv_loc, target_action)*num_dv_weight
-                total_loss['dv'] += F.cross_entropy(output_dv_loc.detach(), target_action).detach().item()/len(stim_inputs)
-            elif block_type_target[i]==1:
-                loss += F.cross_entropy(output_dv_loc, uniform_probs)*num_dv_weight
-                total_loss['dv'] += F.cross_entropy(output_dv_loc.detach(), uniform_probs).detach().item()/len(stim_inputs)
-            else:
-                raise ValueError
+            loss, total_loss = calculate_and_save_loss('dv', dv_loss_func, 
+                                                        output_dv_stim, dv_stim_targets[i].flatten(), 
+                                                        num_dv_weight, loss, total_loss)
 
             # decode block type 
             output_block_type = output['block_type'].flatten(end_dim=-2) # (batch_size, 2)
-            target_block_type = block_type_target[i].flatten() # (batch_size)
-            loss += F.cross_entropy(output_block_type, target_block_type, 
-                                    weight=0.5/torch.tensor(what_where_task.block_type_probs))*num_block_type_weight
-            total_loss['block_type'] += F.cross_entropy(output_block_type.detach(), target_block_type, 
-                                                        weight=0.5/torch.tensor(what_where_task.block_type_probs)).detach().item()/len(stim_inputs)
-            total_acc['block_type_acc'] += (output_block_type.argmax(dim=-1)==target_block_type).float().item()/len(stim_inputs)/2
+            target_block_type = block_type_target[i].flatten() # (batch_size, )
+            loss, total_loss = calculate_and_save_loss('block_type', block_type_loss_func, 
+                                                        output_block_type, target_block_type, 
+                                                        num_block_type_weight, loss, total_loss)
+            total_acc['block_type_acc'] += (output_block_type.argmax(dim=-1)==target_block_type).float().item()/2
 
             # regularize firing rate
             loss += args.l2r*hs.pow(2).mean()/num_phases
@@ -132,7 +148,7 @@ def train(model, iters):
                     'go_cue': torch.zeros(args.batch_size, 1, device=device),
                     'fixation': torch.ones(args.batch_size, 1, device=device),
                     'stimulus': stim_inputs[i],
-                    'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
+                    # 'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
                     'action_chosen': torch.zeros(args.batch_size, 2, device=device), # left/right
                 }
                 output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_delay, 
@@ -142,34 +158,27 @@ def train(model, iters):
 
                 # decode action to be fixation
                 output_action = output['action'].flatten(end_dim=-2) # (batch_size, 2)
-                loss += F.cross_entropy(output_action, uniform_probs)*num_action_weight/p_delay
-                total_loss['action'] += F.cross_entropy(output_action.detach(), uniform_probs).detach().item()/len(stim_inputs)
+                loss, total_loss = calculate_and_save_loss('action', F.cross_entropy, 
+                                                           output_action, uniform_probs, 
+                                                           num_action_weight/p_delay, loss, total_loss)
 
                 # decode loc_update and img_update directions
                 output_dv_loc = output['dv_loc'].flatten(end_dim=-2) # (batch_size, 2)
+                loss, total_loss = calculate_and_save_loss('dv', dv_loss_func, 
+                                                            output_dv_loc, dv_loc_targets[i].flatten(), 
+                                                            num_dv_weight/p_delay, loss, total_loss)
                 output_dv_stim = output['dv_stim'].flatten(end_dim=-2) # (batch_size, 2)
-                target_action = action_targets[i].flatten() # (batch_size, )
-                if block_type_target[i] == 0:
-                    # loss += F.cross_entropy(output_dv_loc, target_action)*num_dv_weight/p_delay
-                    loss += F.cross_entropy(output_dv_stim, uniform_probs)*num_dv_weight/p_delay
-                    # total_loss['dv'] += F.cross_entropy(output_dv_loc.detach(), target_action).detach().item()/len(stim_inputs)/p_delay
-                    total_loss['dv'] += F.cross_entropy(output_dv_stim.detach(), uniform_probs).detach().item()/len(stim_inputs)/p_delay
-                elif block_type_target[i]==1:
-                    # loss += F.cross_entropy(output_dv_loc, uniform_probs)*num_dv_weight/p_delay
-                    loss += F.cross_entropy(output_dv_stim, target_action)*num_dv_weight/p_delay
-                    # total_loss['dv'] += F.cross_entropy(output_dv_loc.detach(), uniform_probs).detach().item()/len(stim_inputs)/p_delay
-                    total_loss['dv'] += F.cross_entropy(output_dv_stim.detach(), target_action).detach().item()/len(stim_inputs)/p_delay
-                else:
-                    raise ValueError
+                loss, total_loss = calculate_and_save_loss('dv', dv_loss_func, 
+                                                            output_dv_stim, dv_stim_targets[i].flatten(), 
+                                                            num_dv_weight/p_delay, loss, total_loss)
             
                 # decode block type
                 output_block_type = output['block_type'].flatten(end_dim=-2) # (batch_size, 2)
-                target_block_type = block_type_target[i].flatten() # (batch_size)
-                loss += F.cross_entropy(output_block_type, target_block_type, 
-                                        weight=0.5/torch.tensor(what_where_task.block_type_probs))*num_block_type_weight/p_delay
-                total_loss['block_type'] += F.cross_entropy(output_block_type.detach(), target_block_type, 
-                                                            weight=0.5/torch.tensor(what_where_task.block_type_probs)).detach().item()/len(stim_inputs)/p_delay
-                total_acc['block_type_acc'] += (output_block_type.argmax(dim=-1)==target_block_type).float().item()/len(stim_inputs)/p_delay/2
+                target_block_type = block_type_target[i].flatten() # (batch_size, )
+                loss, total_loss = calculate_and_save_loss('block_type', block_type_loss_func, 
+                                                            output_block_type, target_block_type, 
+                                                            num_block_type_weight/p_delay, loss, total_loss)
+                total_acc['block_type_acc'] += (output_block_type.argmax(dim=-1)==target_block_type).float().item()/p_delay/2
 
                 # regularize firing rate
                 loss += args.l2r*hs.pow(2).mean()/num_phases
@@ -180,7 +189,7 @@ def train(model, iters):
                 'go_cue': torch.ones(args.batch_size, 1, device=device),
                 'fixation': torch.ones(args.batch_size, 1, device=device),
                 'stimulus': stim_inputs[i],
-                'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
+                # 'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
                 'action_chosen': torch.zeros(args.batch_size, 2, device=device), # left/right
             }
             output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_stim, 
@@ -194,24 +203,16 @@ def train(model, iters):
            
             # decode action
             output_action = output['action'].flatten(end_dim=-2) # (batch_size, 2)
-            target_action = action_targets[i].flatten() # (batch_size, )
-            loss += F.cross_entropy(output_action, target_action)*num_action_weight
-            total_loss['action'] += F.cross_entropy(output_action.detach(), target_action).detach().item()/len(stim_inputs)
-            total_acc['action_acc'] += (action==target_action).float().item()/len(stim_inputs)
+            loss, total_loss = calculate_and_save_loss('action', F.cross_entropy, 
+                                                       output_action, action_targets[i].flatten(), 
+                                                       num_action_weight, loss, total_loss)
+            total_acc['action_acc'] += (action==action_targets[i]).float().item()
 
             # decode stimulus
             output_stimulus = output['stimulus'].flatten() # (batch_size, 2)
-            target_stimulus = stimulus_targets[i].flatten() # (batch_size, 2)
-            loss += F.mse_loss(output_stimulus, target_stimulus)*num_stimulus_weight
-            total_loss['stimulus'] += F.mse_loss(output_stimulus.detach(), target_stimulus).detach().item()/len(stim_inputs)
-
-            # decode dv_loc and dv_stim directions to be zero (no dQ activity during choice phase)
-            output_dv_loc = output['dv_loc'].flatten(end_dim=-2) # (batch_size, 2)
-            output_dv_stim = output['dv_stim'].flatten(end_dim=-2) # (batch_size, 2)
-            loss += F.cross_entropy(output_dv_stim, uniform_probs)*num_dv_weight
-            total_loss['dv'] += F.cross_entropy(output_dv_stim.detach(), uniform_probs).detach().item()/len(stim_inputs)
-            loss += F.cross_entropy(output_dv_loc, uniform_probs)*num_dv_weight
-            total_loss['dv'] += F.cross_entropy(output_dv_loc.detach(), uniform_probs).detach().item()/len(stim_inputs)
+            loss, total_loss = calculate_and_save_loss('stimulus', F.mse_loss, 
+                                                       output_stimulus, stimulus_targets[i].flatten(), 
+                                                       num_stimulus_weight, loss, total_loss)
 
             # regularize firing rates
             loss += args.l2r*hs.pow(2).mean()/num_phases  # + args.l1r*hs.abs().mean()
@@ -221,7 +222,7 @@ def train(model, iters):
                 'go_cue': torch.ones(args.batch_size, 1, device=device),
                 'fixation': torch.ones(args.batch_size, 1, device=device),
                 'stimulus': stim_inputs[i],  # only chosen stimulus input, zero the other one
-                'reward': torch.eye(2, device=device)[None][torch.arange(args.batch_size), rwd_ch], # no reward/reward
+                # 'reward': torch.eye(2, device=device)[None][torch.arange(args.batch_size), rwd_ch], # no reward/reward
                 'action_chosen': torch.eye(2, device=device)[None][torch.arange(args.batch_size), action], # left/right
             }
             output, hidden, w_hidden, hs = model(all_x, steps=what_where_task.T_choice_reward, 
@@ -258,17 +259,16 @@ def train(model, iters):
                 print('Overflown loss')
                 quit()
             pbar.set_description('Iteration {} Loss: {:.3f}, {:.3f}, {:.3f}, {:.3f}; Acc: {:.3f}, {:.3f}'.format(
-                batch_idx+1, 
-                total_loss['action']/(batch_idx+1), total_loss['dv']/(batch_idx+1),
-                total_loss['stimulus']/(batch_idx+1), total_loss['block_type']/(batch_idx+1), 
-                total_acc['action_acc']/(batch_idx+1), total_acc['block_type_acc']/(batch_idx+1)))
+                batch_idx+1, total_loss['action']/(batch_idx+1)/len(stim_inputs), total_loss['dv']/(batch_idx+1)/len(stim_inputs),
+                total_loss['stimulus']/(batch_idx+1)/len(stim_inputs), total_loss['block_type']/(batch_idx+1)/len(stim_inputs), 
+                total_acc['action_acc']/(batch_idx+1)/len(stim_inputs), total_acc['block_type_acc']/(batch_idx+1)/len(stim_inputs)))
             # pbar.refresh()
             pbar.update(log_interval)
     pbar.close()
-    for k, v in total_acc.items():
-        total_acc[k] = total_acc[k]/iters
-    for k, v in total_loss.items():
-        total_loss[k] = total_loss[k]/iters
+    for k in total_acc.keys():
+        total_acc[k] = total_acc[k]/iters/len(stim_inputs)
+    for k in total_loss.keys():
+        total_loss[k] = total_loss[k]/iters/len(stim_inputs)
     print(f'Training Loss: {[f"{k}: {v:.4f}" for k, v in total_loss.items()]}; Training Acc: {[f"{k}: {v:.4f}" for k, v in total_acc.items()]}')
     try:
         wandb.log({**total_loss, **total_acc})
@@ -307,7 +307,7 @@ def eval(model, epoch):
                         'go_cue': torch.zeros(args.batch_size, 1, device=device),
                         'fixation': torch.zeros(args.batch_size, 1, device=device),
                         'stimulus': torch.zeros_like(stim_inputs[i]),
-                        'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
+                        # 'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
                         'action_chosen': torch.zeros(args.batch_size, 2, device=device), # left/right
                     }
 
@@ -321,7 +321,7 @@ def eval(model, epoch):
                         'go_cue': torch.zeros(args.batch_size, 1, device=device),
                         'fixation': torch.ones(args.batch_size, 1, device=device),
                         'stimulus': torch.zeros_like(stim_inputs[i]),
-                        'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
+                        # 'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
                         'action_chosen': torch.zeros(args.batch_size, 2, device=device), # left/right
                     }
 
@@ -335,7 +335,7 @@ def eval(model, epoch):
                         'go_cue': torch.ones(args.batch_size, 1, device=device),
                         'fixation': torch.ones(args.batch_size, 1, device=device),
                         'stimulus': stim_inputs[i],
-                        'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
+                        # 'reward': torch.zeros(args.batch_size, 2, device=device), # no reward/reward
                         'action_chosen': torch.zeros(args.batch_size, 2, device=device), # left/right
                     }
 
@@ -354,7 +354,7 @@ def eval(model, epoch):
                         'go_cue': torch.ones(args.batch_size, 1, device=device),
                         'fixation': torch.ones(args.batch_size, 1, device=device),
                         'stimulus': stim_inputs[i],
-                        'reward': torch.eye(2, device=device)[None][torch.arange(args.batch_size), rwd_ch], # reward/reward
+                        #  'reward': torch.eye(2, device=device)[None][torch.arange(args.batch_size), rwd_ch], # reward/reward
                         'action_chosen': torch.eye(2, device=device)[None][torch.arange(args.batch_size), action], # left/right
                     }
 
@@ -444,7 +444,7 @@ if __name__ == "__main__":
         'fixation': (1, [0]), # fixation input, 0 or 1
         'go_cue': (1, [0]), # go cue input, 0 or 1
         'stimulus': (args.stim_dims*2, [0]), # stimulus input, concatenated left and right stimulus
-        'reward': (2, [0]), # reward input, [0 1] or [1 0]
+        # 'reward': (2, [0]), # reward input, [0 1] or [1 0]
         'action_chosen': (2, [0]), # action chosen input, left or right
     }
 
@@ -455,7 +455,6 @@ if __name__ == "__main__":
         'stimulus': (args.stim_dims, [0], True), # stimulus value decoding
         'block_type': (2, [0], True), # block type decoding, where or what block
         # decode the desired direction for next choice, separately for block types
-        # detach gradient so that they don't affect the rest of the model
         'dv_loc': (2, [0], True), # desired location based on previous trial outcome
         'dv_stim': (2, [0], True), # location of desired stimulus based on previous trial outcome
     }

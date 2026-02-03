@@ -7,4 +7,4 @@
 #SBATCH --mem=64GB
 #SBATCH --output=slurm_%j.txt
 
-python -u test_perturbation.py
+python -u test_act_perturbation.py

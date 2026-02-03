@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=jupyter_notebook
-#SBATCH --time=240:00:00
+#SBATCH --time=120:00:00
 #SBATCH --mem=64G
 #SBATCH --output=jupyter_notebook_%j.txt
 #SBATCH --error=jupyter_notebook_%j.err
