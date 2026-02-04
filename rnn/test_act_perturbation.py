@@ -122,7 +122,7 @@ def test_model_with_perturbation(all_models, perturbation_vectors, args, ortho_c
 
             print(f'Testing model {mdl_idx+1} out of {num_models} '
                 f'with block type {test_block_type+1} out of {num_block_types} '
-                f'and reversal interval {test_reversal_interval+1} out of {num_reversal_intervals} '
+                f'and reversal interval {test_reversal_interval} out of {num_reversal_intervals} '
                 f'and initial better option {test_initial_better_option+1} out of {num_initial_better_options} '
                 f'and sample index {sample_idx+1} out of {num_sample_indices}')
 
@@ -154,7 +154,7 @@ def test_model_with_perturbation(all_models, perturbation_vectors, args, ortho_c
             results_dict['reward_probs'][block_idx] = trial_info['reward_probs'].squeeze(1)            
                 
             for pert_idx, pert_strength in enumerate(perturbation_strengths):
-                print(f'Testing perturbation strength {pert_strength} out of {num_perturb_conditions}')
+                # print(f'Testing perturbation strength {pert_strength} out of {num_perturb_conditions}')
                 current_perturbation = current_perturbation_direction * pert_strength
                 results_dict['perturbation_strength'][block_idx, pert_idx] = pert_strength
 
@@ -180,14 +180,14 @@ def test_model_with_perturbation(all_models, perturbation_vectors, args, ortho_c
                                                     neumann_order=0,
                                                     hidden=hidden, w_hidden=w_hidden, 
                                                     DAs=torch.zeros(args['batch_size'], device=device), 
-                                                    save_all_states=False,
+                                                    save_all_states=True,
                                                     current_perturbation=current_perturbation)
 
                     results_dict['neuron_state'][block_idx, pert_idx, trial_idx, timestep_windows[0]:timestep_windows[1]] = hs
                     
                     ''' second phase, give fixation '''
                     all_x = {
-                        'go_cue': torch.ones(args['batch_size'], 1, device=device),
+                        'go_cue': torch.zeros(args['batch_size'], 1, device=device),
                         'fixation': torch.ones(args['batch_size'], 1, device=device),
                         'stimulus': torch.zeros_like(stim_inputs[trial_idx]),
                         # 'reward': torch.zeros(args['batch_size'], 2, device=device), # 2+2 for chosen and unchosen rewards
@@ -198,7 +198,7 @@ def test_model_with_perturbation(all_models, perturbation_vectors, args, ortho_c
                                                     neumann_order=0,
                                                     hidden=hidden, w_hidden=w_hidden, 
                                                     DAs=torch.zeros(args['batch_size'], device=device), 
-                                                    save_all_states=False,
+                                                    save_all_states=True,
                                                     current_perturbation=current_perturbation)
 
                     results_dict['neuron_state'][block_idx, pert_idx, trial_idx, timestep_windows[1]:timestep_windows[2]] = hs
@@ -216,7 +216,7 @@ def test_model_with_perturbation(all_models, perturbation_vectors, args, ortho_c
                                                         neumann_order=0,
                                                         hidden=hidden, w_hidden=w_hidden, 
                                                         DAs=torch.zeros(args['batch_size'], device=device), 
-                                                        save_all_states=False,
+                                                        save_all_states=True,
                                                         current_perturbation=current_perturbation)
                     
                     results_dict['neuron_state'][block_idx, pert_idx, trial_idx, timestep_windows[2]:timestep_windows[3]] = hs
@@ -234,15 +234,15 @@ def test_model_with_perturbation(all_models, perturbation_vectors, args, ortho_c
                     all_x = {
                         'go_cue': torch.ones(args['batch_size'], 1, device=device),
                         'fixation': torch.ones(args['batch_size'], 1, device=device),
-                        'stimulus': stim_inputs[trial_idx-1],  # Use perturbed stimulus inputs here too
+                        'stimulus': stim_inputs[trial_idx],  # current trial's stimulus (feedback for choice just made)
                         # 'reward': torch.eye(2, device=device)[None][torch.arange(args['batch_size']), rwd_ch], # reward/reward
                         'action_chosen': torch.eye(2, device=device)[None][torch.arange(args['batch_size']), action], # left/right
                     }
 
-                    output, hidden, w_hidden, _ = all_models[mdl_idx](all_x, steps=what_where_task.T_choice_reward, 
+                    output, hidden, w_hidden, hs = all_models[mdl_idx](all_x, steps=what_where_task.T_choice_reward, 
                                                     neumann_order=0,
                                                     hidden=hidden, w_hidden=w_hidden, 
-                                                    DAs=(2*rwd_ch-1), save_all_states=False,
+                                                    DAs=(2*rwd_ch-1), save_all_states=True,
                                                     current_perturbation=current_perturbation)
 
                     results_dict['neuron_state'][block_idx, pert_idx, trial_idx, timestep_windows[3]:timestep_windows[4]] = hs
@@ -277,12 +277,13 @@ if __name__ == "__main__":
     }
 
     output_config = {
-        'action': (2, [0], True), # left, right
-        'stimulus': (args['stim_dims'], [0], True),
-        'block_type': (2, [0], True), # where or what block
+        'action': (2, [0], True), # action value decoding, left, right, 
+        'stimulus': (args['stim_dims'], [0], True), # stimulus value decoding,stimulus
+        'block_type': (2, [0], True), # block type decoding, where or what block
         'dv_loc': (2, [0], True), # desired location based on previous trial outcome
         'dv_stim': (2, [0], True), # location of desired stimulus based on previous trial outcome
     }
+
 
     total_trial_time = what_where_task.times['ITI']+\
                         what_where_task.times['fixation_time']+\
